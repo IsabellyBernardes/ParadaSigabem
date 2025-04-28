@@ -1,7 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, PermissionsAndroid, Platform, StyleSheet, Alert } from 'react-native';
-import Geolocation, { GeoPosition } from 'react-native-geolocation-service';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  TextInput,
+  Platform,
+} from 'react-native';
 import { WebView } from 'react-native-webview';
+import { useNavigation } from '@react-navigation/native';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 interface Location {
   latitude: number;
@@ -11,123 +20,157 @@ interface Location {
 const LocationScreen: React.FC = () => {
   const [location, setLocation] = useState<Location | null>(null);
   const [address, setAddress] = useState<string>('');
-  const [hasPermission, setHasPermission] = useState<boolean>(false);
+  const navigation = useNavigation<any>();
 
-  useEffect(() => {
-    requestLocationPermission();
-  }, []);
-
-  async function requestLocationPermission() {
-    try {
-      if (Platform.OS === 'android') {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          {
-            title: 'Permissão de Localização',
-            message: 'Precisamos da sua localização para mostrar no mapa.',
-            buttonNeutral: 'Perguntar depois',
-            buttonNegative: 'Cancelar',
-            buttonPositive: 'OK',
-          }
-        );
-        if (granted === PermissionsAndroid.RESULTS.GRANTED) {
-          setHasPermission(true);
-          getCurrentLocation();
-        } else {
-          console.log('Permissão negada');
-        }
-      } else {
-        // No iOS, Geolocation.requestAuthorization já é automático
-        Geolocation.requestAuthorization('whenInUse').then(auth => {
-          if (auth === 'granted') {
-            setHasPermission(true);
-            getCurrentLocation();
-          } else {
-            console.log('Permissão negada');
-          }
-        });
-      }
-    } catch (err) {
-      console.warn(err);
+  const handleSearch = async () => {
+    if (!address.trim()) {
+      Alert.alert('Erro', 'Digite um endereço.');
+      return;
     }
-  }
-
-  function getCurrentLocation() {
-    Geolocation.getCurrentPosition(
-      (position: GeoPosition) => {
-        console.log('Localização recebida:', position);
-        setLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-      },
-      (error) => {
-        console.error('Erro ao pegar localização:', error);
-        Alert.alert('Erro', 'Não foi possível obter a localização.');
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 10000,
-        forceRequestLocation: true,
-        showLocationDialog: true,
+    try {
+      const resp = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          address
+        )}`
+      );
+      const results = await resp.json();
+      if (results.length > 0) {
+        const { lat, lon } = results[0];
+        setLocation({ latitude: parseFloat(lat), longitude: parseFloat(lon) });
+      } else {
+        Alert.alert('Não encontrado', 'Endereço não encontrado.');
       }
-    );
-  }
+    } catch {
+      Alert.alert('Erro', 'Não foi possível buscar o endereço.');
+    }
+  };
 
+  // HTML usando Carto Positron + marcador Padrão
+  const mapHtml = location
+    ? `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+    <style>
+      html, body, #map { height:100%; margin:0; padding:0; }
+      .leaflet-control-attribution { display:none; }
+      .leaflet-bar a { background:#fff; border-radius:4px; }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script>
+      var map = L.map('map', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([${location.latitude}, ${location.longitude}], 16);
 
-  const mapHtml = location ? `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0">
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-        <style> #map { height: 100vh; margin: 0; padding: 0; } </style>
-      </head>
-      <body>
-        <div id="map"></div>
-        <script>
-          var map = L.map('map').setView([${location.latitude}, ${location.longitude}], 16);
-          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-          }).addTo(map);
-          var marker = L.marker([${location.latitude}, ${location.longitude}]).addTo(map);
-        </script>
-      </body>
-    </html>
-  ` : null;
+      L.tileLayer(
+        'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        { maxZoom: 20 }
+      ).addTo(map);
+
+      // marcador padrão do Leaflet
+      L.marker([${location.latitude}, ${location.longitude}]).addTo(map);
+    </script>
+  </body>
+</html>
+`
+    : null;
 
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{ height: '50%' }}>
-        {location ? (
-          <WebView source={{ html: mapHtml || '' }} />
+    <View style={styles.container}>
+      <View style={styles.mapContainer}>
+        {mapHtml ? (
+          <WebView
+            source={{ html: mapHtml }}
+            originWhitelist={['*']}
+            mixedContentMode="always"
+            allowUniversalAccessFromFileURLs
+            allowFileAccess
+            style={styles.webview}
+          />
         ) : (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Text>Carregando mapa...</Text>
+          <View style={styles.mapPlaceholder}>
+            <Text style={styles.mapPlaceholderText}>
+              Mapa aguardando busca...
+            </Text>
           </View>
         )}
       </View>
 
       <View style={styles.card}>
         <Text style={styles.title}>Informe a sua localização</Text>
-        <Text style={styles.label}>Sua Localização</Text>
-        <TouchableOpacity onPress={requestLocationPermission}>
-          <Text style={styles.link}>Deseja utilizar a localização atual?</Text>
-        </TouchableOpacity>
-        <Text style={styles.address}>
-          {address || 'Localização ainda não detectada'}
-        </Text>
 
-        <View style={styles.buttons}>
-          <TouchableOpacity style={styles.button}><Text>🏠 Casa</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.button}><Text>🏢 Trabalho</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.button}><Text>📍 Outros</Text></TouchableOpacity>
+        <View style={styles.rowHeader}>
+          <Text style={styles.label}>Sua localização</Text>
+          <TouchableOpacity onPress={handleSearch}>
+            <Text style={styles.currentLocationLink}>
+              Deseja utilizar a localização atual?
+            </Text>
+          </TouchableOpacity>
         </View>
 
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Digite o endereço"
+            placeholderTextColor="#000"
+            value={address}
+            onChangeText={setAddress}
+            returnKeyType="search"
+            onSubmitEditing={handleSearch}
+          />
+          <TouchableOpacity onPress={handleSearch} style={styles.iconButton}>
+            <Icon name="search-outline" size={20} color="#666" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={styles.buttonSmall}
+            onPress={() => navigation.navigate('Home')}
+          >
+            <Text style={styles.buttonText}>🏠 Casa</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.buttonSmall}>
+            <Text style={styles.buttonText}>🏢 Trabalho</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity style={styles.buttonFull}>
+          <Text style={styles.buttonText}>📍 Outros</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.saveButton}>
-          <Text style={styles.saveButtonText}>Salvar endereço</Text>
+          <Text style={styles.saveText}>Salvar endereço</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+          <Icon name="home-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Search')}>
+          <Icon name="search-outline" size={24} color="#666" />
+        </TouchableOpacity>
+
+        <View style={styles.fabContainer}>
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => navigation.navigate('Location')}
+          >
+            <Text style={styles.fabText}>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity onPress={() => navigation.navigate('History')}>
+          <Icon name="time-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+          <Icon name="person-outline" size={24} color="#666" />
         </TouchableOpacity>
       </View>
     </View>
@@ -135,6 +178,12 @@ const LocationScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f8f9fa' },
+  mapContainer: { height: '50%', backgroundColor: '#e9ecef' },
+  webview: { flex: 1 },
+  mapPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  mapPlaceholderText: { color: '#6c757d', fontSize: 16 },
+
   card: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 24,
@@ -142,46 +191,103 @@ const styles = StyleSheet.create({
     padding: 24,
     marginTop: -24,
     flex: 1,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  label: {
-    marginTop: 8,
-    color: '#555',
-  },
-  link: {
-    color: 'red',
-    marginTop: 8,
-  },
-  address: {
-    marginTop: 8,
-    fontSize: 16,
-  },
-  buttons: {
+  title: { fontSize: 20, fontWeight: 'bold' },
+
+  rowHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginVertical: 16,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
   },
-  button: {
+  label: { fontSize: 16, color: '#343a40' },
+  currentLocationLink: { fontSize: 14, color: 'red' },
+
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#f1f1f1',
-    padding: 12,
     borderRadius: 8,
-    minWidth: 80,
+    marginTop: 12,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  input: {
+    flex: 1,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 10,
+  },
+  iconButton: {
+    padding: 8,
+  },
+
+  buttonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+  },
+  buttonSmall: {
+    backgroundColor: '#f1f1f1',
+    borderRadius: 8,
+    width: '48%',
+    paddingVertical: 12,
     alignItems: 'center',
   },
+  buttonFull: {
+    backgroundColor: '#f1f1f1',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  buttonText: { fontSize: 16 },
+
   saveButton: {
     backgroundColor: '#d50000',
-    padding: 16,
     borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 24,
   },
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+  saveText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+
+  bottomNav: {
+    height: 60,
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    elevation: 4,
+    paddingHorizontal: 20,
+  },
+  fabContainer: {
+    width: 60,
+    alignItems: 'center',
+    marginTop: -30,
+  },
+  fab: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+  },
+  fabText: {
+    fontSize: 32,
+    color: '#000',
+    lineHeight: 36,
   },
 });
 
