@@ -6,6 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomeScreen from './src/screens/HomeScreen';
 import LocationScreen from './src/screens/LocationScreen';
 import DestinationScreen from './src/screens/DestinationScreen';
+import ConfirmationScreen from './src/screens/ConfirmationScreen';
 
 // 1) Defina todos os parâmetros do seu stack aqui:
 export type RootStackParamList = {
@@ -30,6 +31,8 @@ export default function App() {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Location" component={LocationScreen} />
         <Stack.Screen name="Destination" component={DestinationScreen} />
+        <Stack.Screen name="Confirmation" component={ConfirmationScreen} />
+
       </Stack.Navigator>
     </NavigationContainer>
   );

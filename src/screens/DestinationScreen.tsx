@@ -11,7 +11,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
 
@@ -34,7 +34,7 @@ const DestinationScreen: React.FC = () => {
 
   const [destination, setDestination] = useState<string>('');
   const [destLocation, setDestLocation] = useState<Location | null>(null);
-  const [mapLoading, setMapLoading] = useState<boolean>(false);
+  const [loadingRoute, setLoadingRoute] = useState<boolean>(false);
 
   const handleSearchDestination = async () => {
     if (!destination.trim()) {
@@ -54,6 +54,7 @@ const DestinationScreen: React.FC = () => {
           latitude: parseFloat(lat),
           longitude: parseFloat(lon),
         });
+        setLoadingRoute(true);
       } else {
         Alert.alert('Não encontrado', 'Destino não encontrado.');
       }
@@ -62,6 +63,7 @@ const DestinationScreen: React.FC = () => {
     }
   };
 
+  // HTML do Leaflet com eventos para rota
   const mapHtml = originLocation && destLocation
     ? `
 <!DOCTYPE html>
@@ -73,6 +75,7 @@ const DestinationScreen: React.FC = () => {
     <style>
       html, body, #map { height:100%; margin:0; padding:0; }
       .leaflet-control-attribution { display:none; }
+      /* esconde UI de instruções */
       .leaflet-routing-container,
       .leaflet-routing-container-toggle { display:none; }
     </style>
@@ -86,9 +89,12 @@ const DestinationScreen: React.FC = () => {
       const dest = L.latLng(${destLocation.latitude}, ${destLocation.longitude});
       const map = L.map('map', { zoomControl:true, attributionControl:false });
       L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ maxZoom:20 }).addTo(map);
-      L.Routing.control({
+      const control = L.Routing.control({
         waypoints: [ origin, dest ],
-        router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
+        router: L.Routing.osrmv1({
+                serviceUrl: 'https://router.project-osrm.org/route/v1/driving',
+                requestOptions: { timeout: 1000 }
+              }),
         routeWhileDragging: false,
         showAlternatives: false,
         lineOptions: { styles: [{ color: '#d50000', weight: 4 }] },
@@ -96,6 +102,12 @@ const DestinationScreen: React.FC = () => {
           icon: L.icon({ iconUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png', iconSize: [25,41], iconAnchor: [12,41] })
         }).bindPopup(i===0?'Origem':'Destino')
       }).addTo(map);
+      control.on('routesfound', function() {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ROUTE_OK' }));
+      });
+      control.on('routingerror', function() {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ROUTE_ERROR' }));
+      });
       map.fitBounds([ origin, dest ], { padding: [50,50] });
     </script>
   </body>
@@ -121,6 +133,26 @@ const DestinationScreen: React.FC = () => {
 </html>
 `;
 
+  const handleMessage = (event: WebViewMessageEvent) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'ROUTE_OK') {
+        setLoadingRoute(false);
+        setRouteError(null);
+      }
+      if (msg.type === 'ROUTE_ERROR') {
+        setLoadingRoute(false);
+        setRouteError(msg.message);
+        // ← Aqui:
+        console.warn('[DestinationScreen]', msg.message);
+
+
+
+      }
+    } catch {}
+  };
+
+
   return (
     <View style={styles.container}>
       <View style={styles.mapContainer}>
@@ -131,16 +163,16 @@ const DestinationScreen: React.FC = () => {
           mixedContentMode="always"
           allowUniversalAccessFromFileURLs
           allowFileAccess
-          onLoadStart={() => setMapLoading(true)}
-          onLoadEnd={() => setMapLoading(false)}
+          onMessage={handleMessage}
           style={styles.webview}
         />
-        {mapLoading && (
+        {loadingRoute && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#d50000" />
           </View>
         )}
       </View>
+
       <View style={styles.card}>
         <View style={styles.headerCard}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -148,11 +180,13 @@ const DestinationScreen: React.FC = () => {
           </TouchableOpacity>
           <Text style={styles.cardTitle}>Informe seu destino</Text>
         </View>
+
         <Text style={styles.label}>Lugar de origem</Text>
         <View style={styles.originField}>
           <Icon name="location-sharp" size={16} color="#d50000" />
           <Text style={styles.originText}>{origin}</Text>
         </View>
+
         <Text style={[styles.label, { marginTop: 24 }]}>Lugar de destino</Text>
         <View style={styles.inputContainer}>
           <TextInput
@@ -168,20 +202,48 @@ const DestinationScreen: React.FC = () => {
             <Icon name="search-outline" size={20} color="#666" />
           </TouchableOpacity>
         </View>
+
         <TouchableOpacity
           style={styles.requestButton}
           onPress={() => {
-            if (destLocation) {
-              Alert.alert('Solicitação', `Origem: ${origin}\nDestino: ${destination}`);
-            } else {
+            if (!destLocation) {
               Alert.alert('Erro', 'Busque um destino primeiro.');
+              return;
             }
+            navigation.navigate('Confirmation', {
+              origin,
+              destination,
+              originLocation,
+              destLocation: destLocation!
+            });
           }}
         >
           <Text style={styles.requestButtonText}>Solicitar apoio</Text>
         </TouchableOpacity>
       </View>
-      <View style={styles.bottomNav}>{/* mesma bottom nav */}</View>
+
+      <View style={styles.bottomNav}>
+        <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+          <Icon name="home-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Search')}>
+          <Icon name="search-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <View style={styles.fabContainer}>
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => navigation.navigate('Location')}
+          >
+            <Text style={styles.fabText}>+</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate('History')}>
+          <Icon name="time-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+          <Icon name="person-outline" size={24} color="#666" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
