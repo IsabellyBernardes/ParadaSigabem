@@ -6,6 +6,7 @@ buildscript {
         targetSdkVersion = 35
         ndkVersion = "27.1.12297006"
         kotlinVersion = "2.0.21"
+
     }
     repositories {
         google()
@@ -15,6 +16,17 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    }
+}
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    // força play-services-location 20.0.0 em todas as dependências
+    configurations.all {
+        resolutionStrategy.force "com.google.android.gms:play-services-location:20.0.0"
     }
 }
 

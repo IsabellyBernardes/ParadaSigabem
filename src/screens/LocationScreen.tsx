@@ -1,3 +1,5 @@
+// src/screens/LocationScreen.tsx
+
 import React, { useState } from 'react';
 import {
   View,
@@ -11,6 +13,15 @@ import {
 import { WebView } from 'react-native-webview';
 import { useNavigation } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import Geolocation, {
+  GeolocationResponse,
+  GeolocationError,
+} from 'react-native-geolocation-service';
+import {
+  requestMultiple,
+  PERMISSIONS,
+  RESULTS,
+} from 'react-native-permissions';
 
 interface Location {
   latitude: number;
@@ -22,6 +33,76 @@ const LocationScreen: React.FC = () => {
   const [address, setAddress] = useState<string>('');
   const navigation = useNavigation<any>();
 
+  // Solicita permissões de localização e retorna se a precisa (fine) foi concedida
+  const requestLocationPermissions = async (): Promise<boolean> => {
+    try {
+      if (Platform.OS === 'android') {
+        const statuses = await requestMultiple([
+          PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION,
+          PERMISSIONS.ANDROID.ACCESS_COARSE_LOCATION,
+        ]);
+        const fine =
+          statuses[PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION] ===
+          RESULTS.GRANTED;
+        const coarse =
+          statuses[PERMISSIONS.ANDROID.ACCESS_COARSE_LOCATION] ===
+          RESULTS.GRANTED;
+
+        if (!fine && !coarse) {
+          Alert.alert(
+            'Permissão negada',
+            'Conceda permissão de localização ao app para prosseguir.'
+          );
+          return false;
+        }
+        return fine;
+      } else {
+        // iOS: já cai no diálogo do sistema
+        const status = await requestMultiple([
+          PERMISSIONS.IOS.LOCATION_WHEN_IN_USE,
+        ]);
+        return (
+          status[PERMISSIONS.IOS.LOCATION_WHEN_IN_USE] === RESULTS.GRANTED
+        );
+      }
+    } catch (err) {
+      Alert.alert('Erro', 'Não foi possível solicitar permissão.');
+      return false;
+    }
+  };
+
+  // ao clicar em "usar localização atual"
+  const handleUseCurrentLocation = async () => {
+    const hasFine = await requestLocationPermissions();
+    if (!hasFine) {
+      // usuário não concedeu permissão de localização precisa
+      return;
+    }
+
+    Geolocation.getCurrentPosition(
+      (pos: GeolocationResponse) => {
+        setLocation({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      },
+      (err: GeolocationError) => {
+        // exibe código e mensagem de erro
+        Alert.alert(
+          'Erro ao obter localização',
+          `Código ${err.code}: ${err.message}`
+        );
+      },
+      {
+        enableHighAccuracy: true, // já garantimos permissão fina
+        timeout: 15000,
+        maximumAge: 10000,
+        distanceFilter: 0,
+      }
+    );
+  };
+
+  // busca manual por endereço
   const handleSearch = async () => {
     if (!address.trim()) {
       Alert.alert('Erro', 'Digite um endereço.');
@@ -33,10 +114,16 @@ const LocationScreen: React.FC = () => {
           address
         )}`
       );
-      const results = await resp.json();
+      const results = (await resp.json()) as Array<{
+        lat: string;
+        lon: string;
+      }>;
       if (results.length > 0) {
         const { lat, lon } = results[0];
-        setLocation({ latitude: parseFloat(lat), longitude: parseFloat(lon) });
+        setLocation({
+          latitude: parseFloat(lat),
+          longitude: parseFloat(lon),
+        });
       } else {
         Alert.alert('Não encontrado', 'Endereço não encontrado.');
       }
@@ -45,7 +132,7 @@ const LocationScreen: React.FC = () => {
     }
   };
 
-  // HTML usando Carto Positron + marcador Padrão
+  // HTML do Leaflet
   const mapHtml = location
     ? `
 <!DOCTYPE html>
@@ -63,7 +150,7 @@ const LocationScreen: React.FC = () => {
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
     <script>
-      var map = L.map('map', {
+      const map = L.map('map', {
         zoomControl: true,
         attributionControl: false
       }).setView([${location.latitude}, ${location.longitude}], 16);
@@ -73,7 +160,6 @@ const LocationScreen: React.FC = () => {
         { maxZoom: 20 }
       ).addTo(map);
 
-      // marcador padrão do Leaflet
       L.marker([${location.latitude}, ${location.longitude}]).addTo(map);
     </script>
   </body>
@@ -107,7 +193,7 @@ const LocationScreen: React.FC = () => {
 
         <View style={styles.rowHeader}>
           <Text style={styles.label}>Sua localização</Text>
-          <TouchableOpacity onPress={handleSearch}>
+          <TouchableOpacity onPress={handleUseCurrentLocation}>
             <Text style={styles.currentLocationLink}>
               Deseja utilizar a localização atual?
             </Text>
@@ -156,7 +242,6 @@ const LocationScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.navigate('Search')}>
           <Icon name="search-outline" size={24} color="#666" />
         </TouchableOpacity>
-
         <View style={styles.fabContainer}>
           <TouchableOpacity
             style={styles.fab}
@@ -165,7 +250,6 @@ const LocationScreen: React.FC = () => {
             <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
         </View>
-
         <TouchableOpacity onPress={() => navigation.navigate('History')}>
           <Icon name="time-outline" size={24} color="#666" />
         </TouchableOpacity>
@@ -197,7 +281,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  title: { fontSize: 20, fontWeight: 'bold' },
+  title: {
+      fontSize: 20,
+      fontWeight: 'bold',
+      color: '#000',
+      },
 
   rowHeader: {
     flexDirection: 'row',
@@ -220,6 +308,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     paddingVertical: Platform.OS === 'ios' ? 14 : 10,
+    color: '#000',
   },
   iconButton: {
     padding: 8,
@@ -244,7 +333,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 12,
   },
-  buttonText: { fontSize: 16 },
+  buttonText: { fontSize: 16, color: '#000', },
 
   saveButton: {
     backgroundColor: '#d50000',

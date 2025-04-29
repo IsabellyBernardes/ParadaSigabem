@@ -18,7 +18,7 @@ export default function HomeScreen() {
     <View style={styles.container}>
       {/* Conteúdo Principal */}
       <View style={styles.content}>
-        <Image source={require('../assets/ifpe-logo.png')} style={styles.logo} />
+        <Image source={require('../assets/sigabem.jpg')} style={styles.logo} />
         <TextInput
           style={styles.input}
           placeholder="Procurar"
@@ -107,6 +107,7 @@ const styles = StyleSheet.create({
   },
   buttonLabel: {
     fontSize: 16,
+    color: '#000',
   },
   bottomNav: {
     height: 60,
