@@ -67,7 +67,7 @@ const ConfirmationScreen: React.FC = () => {
     const control = L.Routing.control({
       waypoints: [ origin, dest ],
       router: L.Routing.osrmv1({
-        serviceUrl: 'https://router.project-osrm.org/route/v1/driving',
+        serviceUrl: 'https://router.project-osrm.org/route/v1',
         requestOptions: { timeout: 1000 }
       }),
       routeWhileDragging: false,

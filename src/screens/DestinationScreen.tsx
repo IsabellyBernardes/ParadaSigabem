@@ -27,6 +27,38 @@ type RootStackParamList = {
 
 type DestinationRouteProp = RouteProp<RootStackParamList, 'Destination'>;
 
+
+/**
+ * Tenta fazer POST até `retries` vezes, com `delay` ms entre tentativas.
+ */
+async function sendRequestWithRetry(
+  url: string,
+  body: any,
+  retries = 3,
+  delay = 2000
+): Promise<void> {
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      throw new Error(`Status ${resp.status}`);
+    }
+  } catch (err) {
+    if (retries > 1) {
+      console.warn(`Request failed, tentando novamente em ${delay}ms…`, err);
+      await new Promise(res => setTimeout(res, delay));
+      return sendRequestWithRetry(url, body, retries - 1, delay * 2);
+    } else {
+      console.error('Falha definitiva ao enviar pedido:', err);
+    }
+  }
+}
+
+
+
 const DestinationScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<DestinationRouteProp>();
@@ -92,7 +124,7 @@ const DestinationScreen: React.FC = () => {
       const control = L.Routing.control({
         waypoints: [ origin, dest ],
         router: L.Routing.osrmv1({
-                serviceUrl: 'https://router.project-osrm.org/route/v1/driving',
+                serviceUrl: 'https://router.project-osrm.org/route/v1',
                 requestOptions: { timeout: 1000 }
               }),
         routeWhileDragging: false,
@@ -210,6 +242,20 @@ const DestinationScreen: React.FC = () => {
               Alert.alert('Erro', 'Busque um destino primeiro.');
               return;
             }
+
+            const payload = {
+                  origin,
+                  destination,
+                  requested: true,
+                  timestamp: new Date().toISOString(),
+                };
+
+            // dispara os POSTs em background, com retry
+            sendRequestWithRetry(
+               'https://seu-servidor.com/api/requests',
+               payload
+            );
+
             navigation.navigate('Confirmation', {
               origin,
               destination,
