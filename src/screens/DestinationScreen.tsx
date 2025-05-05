@@ -31,31 +31,23 @@ type DestinationRouteProp = RouteProp<RootStackParamList, 'Destination'>;
 /**
  * Tenta fazer POST até `retries` vezes, com `delay` ms entre tentativas.
  */
-async function sendRequestWithRetry(
-  url: string,
-  body: any,
-  retries = 3,
-  delay = 2000
-): Promise<void> {
+async function sendRequestWithRetry( url, body, retries = 3, delay = 2000 ) {
+  console.log(`[sendRequest] tentando ${url} | tentativas restantes: ${retries}`, body);
   try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      throw new Error(`Status ${resp.status}`);
-    }
+    const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    console.log(`[sendRequest] resposta HTTP:`, resp.status);
+    if (!resp.ok) throw new Error(`Status ${resp.status}`);
   } catch (err) {
+    console.warn('[sendRequest] erro:', err.message);
     if (retries > 1) {
-      console.warn(`Request failed, tentando novamente em ${delay}ms…`, err);
-      await new Promise(res => setTimeout(res, delay));
+      await new Promise(r => setTimeout(r, delay));
       return sendRequestWithRetry(url, body, retries - 1, delay * 2);
     } else {
-      console.error('Falha definitiva ao enviar pedido:', err);
+      console.error('[sendRequest] falha definitiva:', err);
     }
   }
 }
+
 
 
 
@@ -251,10 +243,18 @@ const DestinationScreen: React.FC = () => {
                 };
 
             // dispara os POSTs em background, com retry
+            // TODO: mudar a url para o servidor real
+            // TODO: Teste com curl
+            //curl -X POST https://api.suaempresa.com/api/requests \
+            //     -H "Content-Type: application/json" \
+            //     -d '{"origin":"Rua A","destination":"Av. B","requested":true,"timestamp":"2025-05-04T15:00:00Z"}'
+            const requestUrl = 'http://192.168.31.101:5000/api/requests';
+            console.log('Enviando pedido para:', requestUrl, payload);
             sendRequestWithRetry(
-               'https://seu-servidor.com/api/requests',
+               requestUrl,
                payload
             );
+        console.log('[DESTINATION] Chamou sendRequestWithRetry');
 
             navigation.navigate('Confirmation', {
               origin,

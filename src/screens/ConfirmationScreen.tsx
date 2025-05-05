@@ -55,14 +55,23 @@ const ConfirmationScreen: React.FC = () => {
   <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
   <script>
     const origin = L.latLng(${originLocation.latitude}, ${originLocation.longitude});
-    const dest = L.latLng(${destLocation.latitude}, ${destLocation.longitude});
-    const map = L.map('map', { zoomControl:true, attributionControl:false });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ maxZoom:20 }).addTo(map);
-    // marcadores iniciais
+    const dest   = L.latLng(${destLocation.latitude},   ${destLocation.longitude});
+    const map    = L.map('map', { zoomControl:true, attributionControl:false });
+
+    L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      { maxZoom: 30 }
+    ).addTo(map);
+
+    // marca os dois pontos logo de cara
     L.marker(origin).addTo(map).bindPopup('Origem');
     L.marker(dest).addTo(map).bindPopup('Destino');
-    // ajusta para ver ambos pontos inicialmente
-    map.fitBounds([origin, dest], { padding: [30,30] });
+
+    // primeiro ajuste de bounds (limita zoom máximo a 5 para ficar mais aberto)
+    map.fitBounds([ origin, dest ], {
+      padding: [50,50],
+      maxZoom: 5
+    });
 
     const control = L.Routing.control({
       waypoints: [ origin, dest ],
@@ -74,16 +83,24 @@ const ConfirmationScreen: React.FC = () => {
       showAlternatives: false,
       lineOptions: { styles: [{ color: '#d50000', weight: 4 }] },
       createMarker: (i, wp) => L.marker(wp.latLng, {
-        icon: L.icon({ iconUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png', iconSize: [25,41], iconAnchor: [12,41] })
+        icon: L.icon({
+          iconUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png',
+          iconSize: [25,41],
+          iconAnchor: [12,41]
+        })
       }).bindPopup(i===0?'Origem':'Destino')
     }).addTo(map);
 
     control.on('routesfound', () => {
-      map.fitBounds(control.getPlan().getWaypoints().map(wp => wp.latLng), { padding: [30,30] });
+      const waypoints = control.getPlan().getWaypoints().map(wp => wp.latLng);
+      map.fitBounds(waypoints, {
+        padding: [30,30],
+        maxZoom: 5
+      });
       window.ReactNativeWebView.postMessage('ROUTE_OK');
     });
-    control.on('routingerror', function(err) {
-      console.error('[DestinationRoute] routing error:', JSON.stringify(err));
+
+    control.on('routingerror', () => {
       window.ReactNativeWebView.postMessage('ROUTE_ERROR');
     });
   </script>
@@ -102,7 +119,7 @@ const ConfirmationScreen: React.FC = () => {
       <View style={styles.mapContainer}>
         <WebView
           source={{ html: mapHtml }}
-          originWhitelist={["*"]}
+          originWhitelist={['*']}
           mixedContentMode="always"
           allowUniversalAccessFromFileURLs
           allowFileAccess
