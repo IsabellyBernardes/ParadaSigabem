@@ -248,7 +248,7 @@ const DestinationScreen: React.FC = () => {
             //curl -X POST https://api.suaempresa.com/api/requests \
             //     -H "Content-Type: application/json" \
             //     -d '{"origin":"Rua A","destination":"Av. B","requested":true,"timestamp":"2025-05-04T15:00:00Z"}'
-            const requestUrl = 'http://192.168.31.101:5000/api/requests';
+            const requestUrl = 'http://192.168.126.11:5000/api/requests';
             console.log('Enviando pedido para:', requestUrl, payload);
             sendRequestWithRetry(
                requestUrl,

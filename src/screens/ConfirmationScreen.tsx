@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
@@ -34,6 +35,7 @@ const ConfirmationScreen: React.FC = () => {
   const { origin, destination, originLocation, destLocation } = route.params;
 
   const [loadingRoute, setLoadingRoute] = useState<boolean>(true);
+  const [showFeedbackModal, setShowFeedbackModal] = useState<boolean>(false);
 
   const mapHtml = `
 <!DOCTYPE html>
@@ -159,6 +161,73 @@ const ConfirmationScreen: React.FC = () => {
           <Text style={styles.buttonText}>Voltar ao Início</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Botão de feedback flutuante */}
+      <TouchableOpacity
+        style={styles.feedbackButton}
+        onPress={() => setShowFeedbackModal(true)}
+      >
+        <Icon name="alert-circle" size={24} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Modal de feedback */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showFeedbackModal}
+        onRequestClose={() => setShowFeedbackModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Reportar problema</Text>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => setShowFeedbackModal(false)}
+            >
+              <Text style={styles.modalOptionText}>Desisti da solicitação</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => setShowFeedbackModal(false)}
+            >
+              <Text style={styles.modalOptionText}>Não fui atendido</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              onPress={() => setShowFeedbackModal(false)}
+            >
+              <Text style={styles.modalCancelButtonText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Barra de navegação inferior */}
+      <View style={styles.bottomNav}>
+        <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+          <Icon name="home-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Search')}>
+          <Icon name="search-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <View style={styles.fabContainer}>
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={() => navigation.navigate('Location')}
+          >
+            <Text style={styles.fabText}>+</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate('History')}>
+          <Icon name="time-outline" size={24} color="#666" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+          <Icon name="person-outline" size={24} color="#666" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -204,6 +273,95 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  feedbackButton: {
+    position: 'absolute',
+    bottom: 80, // Ajustado para ficar acima da bottomNav
+    right: 30,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#d50000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    zIndex: 20,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#000',
+    textAlign: 'center',
+  },
+  modalOption: {
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalOptionText: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+  },
+  modalCancelButton: {
+    marginTop: 20,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+  },
+  modalCancelButtonText: {
+    fontSize: 16,
+    color: '#d50000',
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  bottomNav: {
+    height: 60,
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  fabContainer: {
+    width: 60,
+    alignItems: 'center',
+    marginTop: -30,
+  },
+  fab: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+  },
+  fabText: {
+    fontSize: 32,
+    color: '#000',
+    lineHeight: 36,
+  },
 });
 
 export default ConfirmationScreen;
