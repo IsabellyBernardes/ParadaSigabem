@@ -14,6 +14,7 @@ import {
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface Location {
   latitude: number;
@@ -23,33 +24,59 @@ interface Location {
 type RootStackParamList = {
   Location: undefined;
   Destination: { origin: string; originLocation: Location };
+  Confirmation: {
+    origin: string;
+    destination: string;
+    originLocation: Location;
+    destLocation: Location;
+  };
 };
 
 type DestinationRouteProp = RouteProp<RootStackParamList, 'Destination'>;
 
-
 /**
- * Tenta fazer POST até `retries` vezes, com `delay` ms entre tentativas.
+ * Faz POST com retry. Retorna:
+ *  - true se HTTP 2xx,
+ *  - false se 401 ou 403,
+ *  - lança em outros erros.
  */
-async function sendRequestWithRetry( url, body, retries = 3, delay = 2000 ) {
-  console.log(`[sendRequest] tentando ${url} | tentativas restantes: ${retries}`, body);
-  try {
-    const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-    console.log(`[sendRequest] resposta HTTP:`, resp.status);
-    if (!resp.ok) throw new Error(`Status ${resp.status}`);
-  } catch (err) {
-    console.warn('[sendRequest] erro:', err.message);
-    if (retries > 1) {
-      await new Promise(r => setTimeout(r, delay));
-      return sendRequestWithRetry(url, body, retries - 1, delay * 2);
-    } else {
-      console.error('[sendRequest] falha definitiva:', err);
+async function sendRequestWithRetry(
+  url: string,
+  body: any,
+  retries = 3,
+  delay = 2000
+): Promise<boolean> {
+  const token = await AsyncStorage.getItem('userToken');
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    console.log(`[sendRequest] tentativa ${attempt} para ${url}`, body);
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      console.log(`[sendRequest] status ${resp.status}`);
+      if (resp.status === 401 || resp.status === 403) {
+        return false;
+      }
+      if (!resp.ok) {
+        throw new Error(`Status ${resp.status}`);
+      }
+      return true;
+    } catch (err) {
+      console.warn(`[sendRequest] erro:`, err);
+      if (attempt < retries) {
+        await new Promise(res => setTimeout(res, delay * attempt));
+        continue;
+      }
+      throw err;
     }
   }
+  return false;
 }
-
-
-
 
 const DestinationScreen: React.FC = () => {
   const navigation = useNavigation<any>();
@@ -59,126 +86,122 @@ const DestinationScreen: React.FC = () => {
   const [destination, setDestination] = useState<string>('');
   const [destLocation, setDestLocation] = useState<Location | null>(null);
   const [loadingRoute, setLoadingRoute] = useState<boolean>(false);
+  const [sending, setSending] = useState<boolean>(false);
 
   const handleSearchDestination = async () => {
     if (!destination.trim()) {
       Alert.alert('Erro', 'Digite um destino.');
       return;
     }
+    setLoadingRoute(true);
     try {
       const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          destination
-        )}`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destination)}`
       );
       const results = (await resp.json()) as Array<{ lat: string; lon: string }>;
       if (results.length > 0) {
         const { lat, lon } = results[0];
-        setDestLocation({
-          latitude: parseFloat(lat),
-          longitude: parseFloat(lon),
-        });
-        setLoadingRoute(true);
+        setDestLocation({ latitude: parseFloat(lat), longitude: parseFloat(lon) });
       } else {
         Alert.alert('Não encontrado', 'Destino não encontrado.');
       }
     } catch {
       Alert.alert('Erro', 'Não foi possível buscar o destino.');
+    } finally {
+      setLoadingRoute(false);
     }
   };
 
-  // HTML do Leaflet com eventos para rota
   const mapHtml = originLocation && destLocation
-    ? `
-<!DOCTYPE html>
+    ? `<!DOCTYPE html>
 <html>
-  <head>
-    <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
-    <style>
-      html, body, #map { height:100%; margin:0; padding:0; }
-      .leaflet-control-attribution { display:none; }
-      /* esconde UI de instruções */
-      .leaflet-routing-container,
-      .leaflet-routing-container-toggle { display:none; }
-    </style>
-  </head>
-  <body>
-    <div id="map"></div>
-    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
-    <script>
-      const origin = L.latLng(${originLocation.latitude}, ${originLocation.longitude});
-      const dest = L.latLng(${destLocation.latitude}, ${destLocation.longitude});
-      const map = L.map('map', { zoomControl:true, attributionControl:false });
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ maxZoom:20 }).addTo(map);
-      const control = L.Routing.control({
-        waypoints: [ origin, dest ],
-        router: L.Routing.osrmv1({
-                serviceUrl: 'https://router.project-osrm.org/route/v1',
-                requestOptions: { timeout: 1000 }
-              }),
-        routeWhileDragging: false,
-        showAlternatives: false,
-        lineOptions: { styles: [{ color: '#d50000', weight: 4 }] },
-        createMarker: (i, wp) => L.marker(wp.latLng, {
-          icon: L.icon({ iconUrl: 'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png', iconSize: [25,41], iconAnchor: [12,41] })
-        }).bindPopup(i===0?'Origem':'Destino')
-      }).addTo(map);
-      control.on('routesfound', function() {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ROUTE_OK' }));
-      });
-      control.on('routingerror', function() {
-        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ROUTE_ERROR' }));
-      });
-      map.fitBounds([ origin, dest ], { padding: [50,50] });
-    </script>
-  </body>
-</html>
-`
-    : `
-<!DOCTYPE html>
+<head>
+  <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
+  <style>
+    html, body, #map { height:100%; margin:0; padding:0; }
+    .leaflet-control-attribution { display:none; }
+    .leaflet-routing-container,
+    .leaflet-routing-container-toggle { display:none; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+  <script>
+    const origin = L.latLng(${originLocation.latitude}, ${originLocation.longitude});
+    const dest   = L.latLng(${destLocation.latitude},   ${destLocation.longitude});
+    const map    = L.map('map', { zoomControl:true, attributionControl:false });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ maxZoom:20 }).addTo(map);
+    const control = L.Routing.control({
+      waypoints:[ origin, dest ],
+      router:L.Routing.osrmv1({ serviceUrl:'https://router.project-osrm.org/route/v1', requestOptions:{ timeout:1000 } }),
+      routeWhileDragging:false,
+      showAlternatives:false,
+      lineOptions:{ styles:[{ color:'#d50000', weight:4 }] },
+      createMarker:(i,wp)=>L.marker(wp.latLng).bindPopup(i===0?'Origem':'Destino')
+    }).addTo(map);
+    control.on('routesfound', ()=>window.ReactNativeWebView.postMessage('ROUTE_OK'));
+    control.on('routingerror', ()=>window.ReactNativeWebView.postMessage('ROUTE_ERROR'));
+    map.fitBounds([ origin, dest ], { padding:[50,50] });
+  </script>
+</body>
+</html>`
+    : `<!DOCTYPE html>
 <html>
-  <head>
-    <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0"/>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
-    <style>html, body, #map { height:100%; margin:0; padding:0; } .leaflet-control-attribution { display:none; }</style>
-  </head>
-  <body>
-    <div id="map"></div>
-    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-    <script>
-      const map = L.map('map', { zoomControl:true, attributionControl:false }).setView([${originLocation.latitude}, ${originLocation.longitude}], 16);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ maxZoom:20 }).addTo(map);
-      L.marker([${originLocation.latitude}, ${originLocation.longitude}]).addTo(map).bindPopup('Origem');
-    </script>
-  </body>
-</html>
-`;
+<head>
+  <meta name="viewport" content="initial-scale=1.0, maximum-scale=1.0"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+  <style>html, body, #map { height:100%; margin:0; padding:0; } .leaflet-control-attribution { display:none; }</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map',{ zoomControl:true, attributionControl:false })
+      .setView([${originLocation.latitude},${originLocation.longitude}],16);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ maxZoom:20 }).addTo(map);
+    L.marker([${originLocation.latitude},${originLocation.longitude}]).addTo(map).bindPopup('Origem');
+  </script>
+</body>
+</html>`;
 
   const handleMessage = (event: WebViewMessageEvent) => {
-    try {
-      const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.type === 'ROUTE_OK') {
-        setLoadingRoute(false);
-        setRouteError(null);
-      }
-      if (msg.type === 'ROUTE_ERROR') {
-        setLoadingRoute(false);
-        setRouteError(msg.message);
-        // ← Aqui:
-        console.warn('[DestinationScreen]', msg.message);
-
-
-
-      }
-    } catch {}
+    if (event.nativeEvent.data === 'ROUTE_OK' || event.nativeEvent.data === 'ROUTE_ERROR') {
+      setLoadingRoute(false);
+    }
   };
 
+  const handleRequest = async () => {
+    if (!destLocation) {
+      Alert.alert('Erro', 'Busque um destino primeiro.');
+      return;
+    }
+    const payload = { origin, destination, requested: true, timestamp: new Date().toISOString() };
+    const url = 'http://192.168.31.101:5000/api/requests';
+
+    setSending(true);
+    try {
+      const ok = await sendRequestWithRetry(url, payload);
+      if (!ok) {
+        // se 401/403, desloga e volta ao login
+        await AsyncStorage.removeItem('userToken');
+        navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+        return;
+      }
+      navigation.navigate('Confirmation', { origin, destination, originLocation, destLocation: destLocation! });
+    } catch {
+      Alert.alert('Erro', 'Não foi possível enviar o pedido.');
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
+      {/* Mapa */}
       <View style={styles.mapContainer}>
         <WebView
           key={mapHtml}
@@ -190,13 +213,14 @@ const DestinationScreen: React.FC = () => {
           onMessage={handleMessage}
           style={styles.webview}
         />
-        {loadingRoute && (
+        {(loadingRoute || sending) && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#d50000" />
           </View>
         )}
       </View>
 
+      {/* Card */}
       <View style={styles.card}>
         <View style={styles.headerCard}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -228,46 +252,15 @@ const DestinationScreen: React.FC = () => {
         </View>
 
         <TouchableOpacity
-          style={styles.requestButton}
-          onPress={() => {
-            if (!destLocation) {
-              Alert.alert('Erro', 'Busque um destino primeiro.');
-              return;
-            }
-
-            const payload = {
-                  origin,
-                  destination,
-                  requested: true,
-                  timestamp: new Date().toISOString(),
-                };
-
-            // dispara os POSTs em background, com retry
-            // TODO: mudar a url para o servidor real
-            // TODO: Teste com curl
-            //curl -X POST https://api.suaempresa.com/api/requests \
-            //     -H "Content-Type: application/json" \
-            //     -d '{"origin":"Rua A","destination":"Av. B","requested":true,"timestamp":"2025-05-04T15:00:00Z"}'
-            const requestUrl = 'http://192.168.126.11:5000/api/requests';
-            console.log('Enviando pedido para:', requestUrl, payload);
-            sendRequestWithRetry(
-               requestUrl,
-               payload
-            );
-        console.log('[DESTINATION] Chamou sendRequestWithRetry');
-
-            navigation.navigate('Confirmation', {
-              origin,
-              destination,
-              originLocation,
-              destLocation: destLocation!
-            });
-          }}
+          style={[styles.requestButton, sending && { opacity: 0.6 }]}
+          onPress={handleRequest}
+          disabled={sending}
         >
           <Text style={styles.requestButtonText}>Solicitar apoio</Text>
         </TouchableOpacity>
       </View>
 
+      {/* Bottom Nav */}
       <View style={styles.bottomNav}>
         <TouchableOpacity onPress={() => navigation.navigate('Home')}>
           <Icon name="home-outline" size={24} color="#666" />
@@ -276,10 +269,7 @@ const DestinationScreen: React.FC = () => {
           <Icon name="search-outline" size={24} color="#666" />
         </TouchableOpacity>
         <View style={styles.fabContainer}>
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => navigation.navigate('Location')}
-          >
+          <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('Location')}>
             <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
         </View>
@@ -299,28 +289,16 @@ const styles = StyleSheet.create({
   mapContainer: { height: '45%', backgroundColor: '#e9ecef' },
   webview: { flex: 1 },
   loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(255,255,255,0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
+    justifyContent: 'center', alignItems: 'center', zIndex: 10,
   },
   card: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: -24,
-    padding: 24,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    flex: 1, backgroundColor: '#fff',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    marginTop: -24, padding: 24, elevation: 5,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1, shadowRadius: 4,
   },
   headerCard: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
   cardTitle: { fontSize: 20, fontWeight: 'bold', marginLeft: 12, color: '#000' },

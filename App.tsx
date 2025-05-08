@@ -1,10 +1,11 @@
 // App.tsx
-import React, { useState, useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { NavigationContainer } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
+import { AuthContext } from './src/contexts/AuthContext';
 import HomeScreen from './src/screens/HomeScreen';
 import LocationScreen from './src/screens/LocationScreen';
 import DestinationScreen from './src/screens/DestinationScreen';
@@ -30,59 +31,59 @@ export type RootStackParamList = {
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const AuthStack = createNativeStackNavigator();
-
-function AuthStackScreen() {
-  return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login" component={LoginScreen} />
-      <AuthStack.Screen name="Register" component={RegisterScreen} />
-    </AuthStack.Navigator>
-  );
-}
 
 export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // Verifica se o usuário está logado ao iniciar o app
+  // Ao montar, lê o token e define login
   useEffect(() => {
-    const checkLoginStatus = async () => {
-      try {
-        const userToken = await AsyncStorage.getItem('userToken');
-        setIsLoggedIn(!!userToken);
-      } catch (error) {
-        console.error('Erro ao verificar login:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkLoginStatus();
+    AsyncStorage.getItem('userToken')
+      .then(token => setIsLoggedIn(!!token))
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
   }, []);
+
+  // funções de signIn / signOut
+  const authContext = useMemo(() => ({
+    signIn: (token: string) => {
+      AsyncStorage.setItem('userToken', token);
+      setIsLoggedIn(true);
+    },
+    signOut: () => {
+      AsyncStorage.removeItem('userToken');
+      setIsLoggedIn(false);
+    },
+    isLoggedIn,
+  }), [isLoggedIn]);
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex:1,justifyContent:'center',alignItems:'center' }}>
         <ActivityIndicator size="large" color="#d50000" />
       </View>
     );
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {isLoggedIn ? (
-          <>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Location" component={LocationScreen} />
-            <Stack.Screen name="Destination" component={DestinationScreen} />
-            <Stack.Screen name="Confirmation" component={ConfirmationScreen} />
-          </>
-        ) : (
-          <Stack.Screen name="Auth" component={AuthStackScreen} />
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+    <AuthContext.Provider value={authContext}>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ headerShown: false }}>
+          {isLoggedIn ? (
+            <>
+              <Stack.Screen name="Home" component={HomeScreen} />
+              <Stack.Screen name="Location" component={LocationScreen} />
+              <Stack.Screen name="Destination" component={DestinationScreen} />
+              <Stack.Screen name="Confirmation" component={ConfirmationScreen} />
+            </>
+          ) : (
+            <>
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="Register" component={RegisterScreen} />
+            </>
+          )}
+        </Stack.Navigator>
+      </NavigationContainer>
+    </AuthContext.Provider>
   );
 }
