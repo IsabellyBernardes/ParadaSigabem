@@ -10,7 +10,7 @@ const app = express();
 app.use(bodyParser.json());
 
 // Configurações
-const PORT = process.env.PORT || 5000;
+const PORT       = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret';
 const SALT_ROUNDS = 10;
 
@@ -36,11 +36,8 @@ app.use((req, res, next) => {
 // Middleware de autenticação JWT
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token =
-    authHeader && authHeader.split(' ')[1];
-
+  const token      = authHeader && authHeader.split(' ')[1];
   if (!token) return res.sendStatus(401);
-
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
@@ -48,12 +45,23 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Garante existência das tabelas, colunas e constraints
+// Garante existência das tabelas e colunas
 async function ensureSchema() {
-  // (1) cria tabela se não existir
+  // 1) users (caso já não exista)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      cpf TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // 2) requests
   await pool.query(`
     CREATE TABLE IF NOT EXISTS requests (
       id SERIAL PRIMARY KEY,
+      user_id INTEGER,
       origin TEXT NOT NULL,
       destination TEXT NOT NULL,
       requested BOOLEAN NOT NULL,
@@ -61,26 +69,7 @@ async function ensureSchema() {
     );
   `);
 
-  // (2) adiciona user_id se necessário
-  await pool.query(`
-    ALTER TABLE requests
-    ADD COLUMN IF NOT EXISTS user_id INTEGER;
-  `);
-
-  // (3) corrige valores nulos em created_at
-  await pool.query(`
-    UPDATE requests
-    SET created_at = NOW()
-    WHERE created_at IS NULL;
-  `);
-
-  // (4) garante default de created_at
-  await pool.query(`
-    ALTER TABLE requests
-    ALTER COLUMN created_at SET DEFAULT NOW();
-  `);
-
-  // (5) cria FK e UNIQUE via DO $$ … $$; conforme já estava
+  // 3) FK user_id → users(id)
   await pool.query(`
     DO $$
     BEGIN
@@ -98,6 +87,7 @@ async function ensureSchema() {
     $$;
   `);
 
+  // 4) UNIQUE per user_id
   await pool.query(`
     DO $$
     BEGIN
@@ -116,176 +106,137 @@ async function ensureSchema() {
   `);
 }
 
-
-// Rotas de autenticação
+// Rotas de registro/login
 app.post('/api/register', async (req, res) => {
   const { cpf, password } = req.body;
-
   if (!cpf || !password) {
-    return res
-      .status(400)
-      .json({ error: 'CPF e senha são obrigatórios' });
+    return res.status(400).json({ error: 'CPF e senha são obrigatórios' });
   }
-
   try {
-    const userExists = await pool.query(
+    const exist = await pool.query(
       'SELECT id FROM users WHERE cpf = $1',
       [cpf.replace(/\D/g, '')]
     );
-
-    if (userExists.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ error: 'CPF já cadastrado' });
+    if (exist.rows.length) {
+      return res.status(400).json({ error: 'CPF já cadastrado' });
     }
-
-    const hashedPassword = await bcrypt.hash(
-      password,
-      SALT_ROUNDS
-    );
-
+    const hash = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await pool.query(
-      `INSERT INTO users (cpf, password)
-       VALUES ($1, $2)
-       RETURNING id, cpf`,
-      [cpf.replace(/\D/g, ''), hashedPassword]
+      `INSERT INTO users (cpf, password) VALUES ($1,$2) RETURNING id, cpf`,
+      [cpf.replace(/\D/g, ''), hash]
     );
-
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Erro no cadastro:', err);
-    res
-      .status(500)
-      .json({ error: 'Erro interno no servidor' });
+    res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
 
 app.post('/api/login', async (req, res) => {
   const { cpf, password } = req.body;
-
   if (!cpf || !password) {
-    return res
-      .status(400)
-      .json({ error: 'CPF e senha são obrigatórios' });
+    return res.status(400).json({ error: 'CPF e senha são obrigatórios' });
   }
-
   try {
     const result = await pool.query(
       'SELECT id, cpf, password FROM users WHERE cpf = $1',
       [cpf.replace(/\D/g, '')]
     );
-
-    if (result.rows.length === 0) {
-      return res
-        .status(401)
-        .json({ error: 'CPF ou senha incorretos' });
+    if (!result.rows.length) {
+      return res.status(401).json({ error: 'CPF ou senha incorretos' });
     }
-
     const user = result.rows[0];
-    const match = await bcrypt.compare(
-      password,
-      user.password
-    );
+    const match = await bcrypt.compare(password, user.password);
     if (!match) {
-      return res
-        .status(401)
-        .json({ error: 'CPF ou senha incorretos' });
+      return res.status(401).json({ error: 'CPF ou senha incorretos' });
     }
-
     const token = jwt.sign(
       { id: user.id, cpf: user.cpf },
       JWT_SECRET,
       { expiresIn: '24h' }
     );
-
     res.json({ token, userId: user.id });
   } catch (err) {
     console.error('Erro no login:', err);
-    res
-      .status(500)
-      .json({ error: 'Erro interno no servidor' });
+    res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
 
-// Rotas protegidas de requests
-app.post(
-  '/api/requests',
-  authenticateToken,
-  async (req, res) => {
-    console.log(
-      'POST /api/requests →',
-      req.user,
-      req.body
-    );
-    const { origin, destination, requested } =
-      req.body;
-
-    if (
-      !origin ||
-      !destination ||
-      requested !== true
-    ) {
-      return res
-        .status(400)
-        .json({ error: 'Payload inválido' });
-    }
-
-    try {
-      const result = await pool.query(
-        `
-        INSERT INTO requests (user_id, origin, destination, requested)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (user_id)
-        DO UPDATE SET
-          origin = EXCLUDED.origin,
-          destination = EXCLUDED.destination,
-          requested = EXCLUDED.requested,
-          created_at = NOW()
-        RETURNING id
-      `,
-        [
-          req.user.id,
-          origin,
-          destination,
-          requested
-        ]
-      );
-
-      res.status(201).json({
-        id: result.rows[0].id,
-        message: 'Solicitação processada com sucesso'
-      });
-    } catch (err) {
-      console.error('Erro ao gravar pedido:', err);
-      res
-        .status(500)
-        .json({ error: 'Erro interno no servidor' });
-    }
+// POST /api/requests (cria ou atualiza)
+app.post('/api/requests', authenticateToken, async (req, res) => {
+  console.log('POST /api/requests →', req.user, req.body);
+  const { origin, destination, requested } = req.body;
+  if (!origin || !destination || requested !== true) {
+    return res.status(400).json({ error: 'Payload inválido' });
   }
-);
+  try {
+    const result = await pool.query(
+      `
+      INSERT INTO requests (user_id, origin, destination, requested)
+      VALUES ($1,$2,$3,$4)
+      ON CONFLICT (user_id)
+      DO UPDATE SET
+        origin = EXCLUDED.origin,
+        destination = EXCLUDED.destination,
+        requested = EXCLUDED.requested,
+        created_at = NOW()
+      RETURNING id
+      `,
+      [req.user.id, origin, destination, requested]
+    );
+    res.status(201).json({
+      id: result.rows[0].id,
+      message: 'Solicitação processada com sucesso'
+    });
+  } catch (err) {
+    console.error('Erro ao gravar pedido:', err);
+    res.status(500).json({ error: 'Erro interno no servidor' });
+  }
+});
 
-app.get(
+// GET /api/requests/current (lê)
+app.get('/api/requests/current', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT * FROM requests WHERE user_id = $1',
+      [req.user.id]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ message: 'Nenhuma solicitação encontrada' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao buscar pedido:', err);
+    res.status(500).json({ error: 'Erro interno no servidor' });
+  }
+});
+
+// ** NOVA ROTA ** PUT /api/requests/current (confirma embarque)
+app.put(
   '/api/requests/current',
   authenticateToken,
   async (req, res) => {
     try {
+      const userId = req.user.id;
       const result = await pool.query(
-        'SELECT * FROM requests WHERE user_id = $1',
-        [req.user.id]
+        `UPDATE requests
+         SET requested = false
+         WHERE user_id = $1
+         RETURNING *`,
+        [userId]
       );
-      if (result.rows.length === 0) {
+      if (result.rowCount === 0) {
         return res
           .status(404)
-          .json({
-            message: 'Nenhuma solicitação encontrada'
-          });
+          .json({ error: 'Nenhuma solicitação ativa encontrada' });
       }
-      res.json(result.rows[0]);
+      res.json({
+        message: 'Embarque confirmado com sucesso',
+        request: result.rows[0],
+      });
     } catch (err) {
-      console.error('Erro ao buscar pedido:', err);
-      res
-        .status(500)
-        .json({ error: 'Erro interno no servidor' });
+      console.error('Erro ao confirmar embarque:', err);
+      res.status(500).json({ error: 'Erro interno no servidor' });
     }
   }
 );
@@ -297,21 +248,19 @@ app.get('/api/test', (req, res) => {
     timestamp: new Date(),
     routes: {
       register: 'POST /api/register',
-      login: 'POST /api/login',
-      requests: 'POST /api/requests'
+      login:    'POST /api/login',
+      post:     'POST /api/requests',
+      get:      'GET  /api/requests/current',
+      put:      'PUT  /api/requests/current'
     }
   });
 });
 
-// Só sobe o servidor depois de garantir o schema
+// Sobe o servidor só depois de garantir o schema
 ensureSchema()
   .then(() => {
-    console.log(
-      'Schema garantido — iniciando servidor...'
-    );
-    app.listen(PORT, () =>
-      console.log(`API rodando na porta ${PORT}`)
-    );
+    console.log('Schema garantido — iniciando servidor...');
+    app.listen(PORT, () => console.log(`API rodando na porta ${PORT}`));
   })
   .catch(err => {
     console.error('Erro garantindo schema:', err);
