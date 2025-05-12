@@ -84,7 +84,7 @@ const RegisterScreen: React.FC = () => {
 
     try {
       // Chamada para a API de registro
-      const response = await fetch('http://192.168.31.101:5000/api/register', {
+      const response = await fetch('http://192.168.127.156:5000/api/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

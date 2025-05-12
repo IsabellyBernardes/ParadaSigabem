@@ -180,7 +180,7 @@ const DestinationScreen: React.FC = () => {
       return;
     }
     const payload = { origin, destination, requested: true, timestamp: new Date().toISOString() };
-    const url = 'http://192.168.31.101:5000/api/requests';
+    const url = 'http://192.168.127.156:5000/api/requests';
 
     setSending(true);
     try {

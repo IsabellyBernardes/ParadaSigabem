@@ -104,7 +104,7 @@ const ConfirmationScreen: React.FC = () => {
     setConfirming(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const resp = await fetch('http://192.168.31.101:5000/api/requests/current', {
+      const resp = await fetch('http://192.168.127.156:5000/api/requests/current', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
