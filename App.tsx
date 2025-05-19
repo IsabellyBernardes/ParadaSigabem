@@ -36,7 +36,6 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // Ao montar, lê o token e define login
   useEffect(() => {
     AsyncStorage.getItem('userToken')
       .then(token => setIsLoggedIn(!!token))
@@ -44,7 +43,6 @@ export default function App() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  // funções de signIn / signOut
   const authContext = useMemo(() => ({
     signIn: (token: string) => {
       AsyncStorage.setItem('userToken', token);

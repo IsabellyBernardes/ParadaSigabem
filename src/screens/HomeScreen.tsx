@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useContext } from 'react';
+
 import {
   View,
   Text,
@@ -9,10 +10,12 @@ import {
   Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { AuthContext } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
+  const { signOut } = useContext(AuthContext);
 
   return (
     <View style={styles.container}>
@@ -37,6 +40,13 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+        {/* Botão de logout */}
+      <TouchableOpacity onPress={signOut} style={[styles.button, { marginTop: 20 }]}>
+        <Icon name="log-out-outline" size={20} color="black" />
+        <Text style={styles.buttonLabel}>Sair</Text>
+      </TouchableOpacity>
+
 
       {/* Barra de Navegação Inferior + FAB */}
       <View style={styles.bottomNav}>

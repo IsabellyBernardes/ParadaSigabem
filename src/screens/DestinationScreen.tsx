@@ -106,6 +106,7 @@ const DestinationScreen: React.FC = () => {
         Alert.alert('Não encontrado', 'Destino não encontrado.');
       }
     } catch {
+        console.error('Erro ao buscar destino:', err);
       Alert.alert('Erro', 'Não foi possível buscar o destino.');
     } finally {
       setLoadingRoute(false);
@@ -180,7 +181,7 @@ const DestinationScreen: React.FC = () => {
       return;
     }
     const payload = { origin, destination, requested: true, timestamp: new Date().toISOString() };
-    const url = 'http://192.168.127.156:5000/api/requests';
+    const url = 'http://192.168.126.112:5000/api/requests';
 
     setSending(true);
     try {

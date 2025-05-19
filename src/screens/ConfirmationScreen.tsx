@@ -1,6 +1,5 @@
 // src/screens/ConfirmationScreen.tsx
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,6 +17,14 @@ import Icon from 'react-native-vector-icons/Ionicons';
 interface Location {
   latitude: number;
   longitude: number;
+}
+
+interface Bus {
+  bus_id: string;
+  latitude: number;
+  longitude: number;
+  recorded_at: string;
+  distance?: number; // Adicionando campo distance
 }
 
 type RootStackParamList = {
@@ -39,6 +46,123 @@ const ConfirmationScreen: React.FC = () => {
   const [loadingRoute, setLoadingRoute] = useState<boolean>(true);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [confirming, setConfirming] = useState<boolean>(false);
+  const [nearbyBuses, setNearbyBuses] = useState<Bus[]>([]);
+  const [selectedBus, setSelectedBus] = useState<string | null>(null);
+  const [busHistory, setBusHistory] = useState<any[]>([]);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [nearestBusDistance, setNearestBusDistance] = useState<number | null>(null);
+  const pollingInterval = useRef<NodeJS.Timeout | null>(null);
+  const fallbackTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Função para formatar a distância
+  const formatDistance = (meters: number | null) => {
+    if (meters === null) return 'Calculando...';
+    if (meters < 1000) return `${Math.round(meters)} metros`;
+    return `${(meters / 1000).toFixed(1)} km`;
+  };
+
+  // Modifique a função fetchNearbyBuses para lidar melhor com erros:
+  const fetchNearbyBuses = async () => {
+    try {
+      const token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        throw new Error('Usuário não autenticado');
+      }
+
+      const url = `http://192.168.126.112:5000/api/buses/nearby?latitude=${originLocation.latitude}&longitude=${originLocation.longitude}&radius=2`;
+      console.log('URL da API:', url);
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Resposta do servidor:', errorText);
+        throw new Error(`Erro HTTP: ${response.status}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType?.includes('application/json')) {
+        const text = await response.text();
+        console.error('Resposta não-JSON:', text.substring(0, 100));
+        throw new Error('Resposta não está no formato JSON');
+      }
+
+      const data = await response.json();
+      console.log('Dados recebidos:', data);
+
+      if (!data.buses) {
+        throw new Error('Estrutura de dados inválida');
+      }
+
+      // Atualização do estado
+      setNearbyBuses(data.buses);
+      setLastUpdate(new Date().toISOString());
+
+      // Calcula e armazena a distância do ônibus mais próximo
+      if (data.buses && data.buses.length > 0) {
+        const nearest = data.buses[0].distance; // Já vem ordenado por distância
+        setNearestBusDistance(nearest);
+      } else {
+        setNearestBusDistance(null);
+      }
+
+    } catch (error) {
+      console.error('Erro completo:', error);
+      Alert.alert(
+        'Erro de Conexão',
+        'Não foi possível obter dados dos ônibus. Verifique sua conexão ou tente novamente mais tarde.'
+      );
+    }
+  };
+
+  // Inicia polling quando a tela é montada
+  useEffect(() => {
+    fetchNearbyBuses();
+    pollingInterval.current = setInterval(fetchNearbyBuses, 5000);
+
+    // Timeout de fallback para o spinner
+    fallbackTimeout.current = setTimeout(() => {
+      setLoadingRoute(false);
+    }, 15000);
+
+    return () => {
+      if (pollingInterval.current) {
+        clearInterval(pollingInterval.current);
+      }
+      if (fallbackTimeout.current) {
+        clearTimeout(fallbackTimeout.current);
+      }
+    };
+  }, [originLocation]);
+
+  // Busca histórico quando um ônibus é selecionado
+  useEffect(() => {
+    if (!selectedBus) return;
+
+    const fetchBusHistory = async () => {
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        const resp = await fetch(
+          `http://192.168.126.112:5000/api/buses/${selectedBus}/history`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const data = await resp.json();
+        setBusHistory(data);
+      } catch (err) {
+        console.error('Erro ao buscar histórico:', err);
+      }
+    };
+
+    fetchBusHistory();
+  }, [selectedBus]);
 
   const mapHtml = `
 <!DOCTYPE html>
@@ -48,91 +172,145 @@ const ConfirmationScreen: React.FC = () => {
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css"/>
   <style>
-    html, body, #map { height:100%; margin:0; padding:0; }
-    .leaflet-control-attribution { display:none; }
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    .leaflet-control-attribution {
+      display: none;
+    }
     .leaflet-routing-container,
-    .leaflet-routing-container-toggle { display:none; }
+    .leaflet-routing-container-toggle {
+      display: none;
+    }
+    .leaflet-control-zoom {
+      border: none !important;
+      background: transparent !important;
+    }
+    .leaflet-control-zoom a {
+      background: white !important;
+      border-radius: 4px !important;
+      margin-bottom: 5px !important;
+      box-shadow: 0 1px 5px rgba(0,0,0,0.1) !important;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
   <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
   <script>
     const origin = L.latLng(${originLocation.latitude}, ${originLocation.longitude});
-    const dest   = L.latLng(${destLocation.latitude},   ${destLocation.longitude});
-    const map    = L.map('map', { zoomControl:true, attributionControl:false });
+    const dest = L.latLng(${destLocation.latitude}, ${destLocation.longitude});
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{ maxZoom:30 }).addTo(map);
-    L.marker(origin).addTo(map).bindPopup('Origem');
-    L.marker(dest).addTo(map).bindPopup('Destino');
-    map.fitBounds([ origin, dest ], { padding:[50,50], maxZoom:5 });
+    const map = L.map('map', {
+      zoomControl: true,
+      attributionControl: false
+    });
 
-    const control = L.Routing.control({
-      waypoints: [ origin, dest ],
-      router: L.Routing.osrmv1({ serviceUrl:'https://router.project-osrm.org/route/v1', requestOptions:{ timeout:1000 } }),
-      routeWhileDragging: false,
-      showAlternatives: false,
-      lineOptions: { styles:[{ color:'#d50000', weight:4 }] },
-      createMarker: (i, wp) => L.marker(wp.latLng, {
-        icon: L.icon({
-          iconUrl:'https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png',
-          iconSize:[25,41], iconAnchor:[12,41]
-        })
-      }).bindPopup(i===0?'Origem':'Destino')
+    // Tile layer minimalista
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      subdomains: 'abcd',
+      detectRetina: true
     }).addTo(map);
 
-    control.on('routesfound', () => {
-      const wps = control.getPlan().getWaypoints().map(wp => wp.latLng);
-      map.fitBounds(wps, { padding:[30,30], maxZoom:5 });
-      window.ReactNativeWebView.postMessage('ROUTE_OK');
-    });
+    const control = L.Routing.control({
+      waypoints: [origin, dest],
+      router: L.Routing.osrmv1({
+        serviceUrl: 'https://router.project-osrm.org/route/v1',
+        requestOptions: { timeout: 10000 }
+      }),
+      routeWhileDragging: false,
+      showAlternatives: false,
+      lineOptions: {
+        styles: [{ color: '#d50000', weight: 4, opacity: 0.8 }]
+      },
+      createMarker: (i, wp) => L.marker(wp.latLng).bindPopup(i === 0 ? 'Origem' : 'Destino')
+    }).addTo(map);
+
+    control.on('routesfound', () => window.ReactNativeWebView.postMessage('ROUTE_OK'));
     control.on('routingerror', () => window.ReactNativeWebView.postMessage('ROUTE_ERROR'));
+
+    map.fitBounds([origin, dest], { padding: [50, 50] });
+
+    const busIcon = L.icon({
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448315.png',
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+      popupAnchor: [0, -32]
+    });
+
+    const buses = ${JSON.stringify(nearbyBuses)};
+    buses.forEach(bus => {
+      L.marker([bus.latitude, bus.longitude], { icon: busIcon })
+        .addTo(map)
+        .bindPopup("Ônibus " + bus.bus_id);
+    });
+
+    // Evento de carregamento
+    map.whenReady(() => {
+      window.ReactNativeWebView.postMessage('MAP_LOADED');
+    });
   </script>
 </body>
 </html>
 `;
 
-  const handleMessage = (e: WebViewMessageEvent) => {
-    if (e.nativeEvent.data === 'ROUTE_OK' || e.nativeEvent.data === 'ROUTE_ERROR') {
-      setLoadingRoute(false);
-    }
-  };
-
-  // ** Esta função é chamada ao clicar em "Sim" **
   const confirmEmbark = async () => {
     setConfirming(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const resp = await fetch('http://192.168.127.156:5000/api/requests/current', {
+      const resp = await fetch('http://192.168.126.112:5000/api/requests/current', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
-      if (!resp.ok) throw new Error(`Status ${resp.status}`);
-      Alert.alert('Sucesso', 'Embarque confirmado!'
-          ,
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => {
-                      setShowConfirmModal(false);
-                      navigation.navigate('Home');
-                    }
-                  }
-                ],
-                { cancelable: false }
-              );
 
-      // se quiser, volta ao início:
-      // navigation.popToTop();
+      if (!resp.ok) throw new Error(`Status ${resp.status}`);
+
+      Alert.alert(
+        'Sucesso',
+        'Embarque confirmado!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setShowConfirmModal(false);
+              navigation.navigate('Home');
+            }
+          }
+        ],
+        { cancelable: false }
+      );
+
     } catch (err: any) {
       console.error('Erro na confirmação:', err);
       Alert.alert('Erro', 'Não foi possível confirmar o embarque.');
     } finally {
       setConfirming(false);
+    }
+  };
+
+  const handleMessage = (e: WebViewMessageEvent) => {
+    const data = e.nativeEvent.data;
+    console.log('Mensagem do WebView:', data);
+
+    if (data === 'MAP_LOADED' || data === 'ROUTE_OK') {
+      setLoadingRoute(false);
+      if (fallbackTimeout.current) {
+        clearTimeout(fallbackTimeout.current);
+      }
+    }
+
+    if (data === 'ROUTE_ERROR') {
+      Alert.alert('Erro', 'Não foi possível calcular a rota');
+      setLoadingRoute(false);
     }
   };
 
@@ -144,10 +322,19 @@ const ConfirmationScreen: React.FC = () => {
           source={{ html: mapHtml }}
           originWhitelist={['*']}
           mixedContentMode="always"
-          allowUniversalAccessFromFileURLs
-          allowFileAccess
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          startInLoadingState={true}
           onMessage={handleMessage}
           style={styles.webview}
+          onLoadEnd={() => {
+            setTimeout(() => setLoadingRoute(false), 5000);
+          }}
+          renderLoading={() => (
+            <View style={styles.loadingOverlay}>
+              <ActivityIndicator size="large" color="#d50000" />
+            </View>
+          )}
         />
         {loadingRoute && (
           <View style={styles.loadingOverlay}>
@@ -156,9 +343,17 @@ const ConfirmationScreen: React.FC = () => {
         )}
       </View>
 
-      {/* Card */}
+      {/* Card de informações */}
       <View style={styles.card}>
         <Text style={styles.title}>Apoio ao embarque solicitado</Text>
+
+        {/* Adicionando a distância do ônibus mais próximo */}
+        <View style={styles.distanceContainer}>
+          <Icon name="bus" size={20} color="#d50000" />
+          <Text style={styles.distanceText}>
+            Ônibus mais próximo: {formatDistance(nearestBusDistance)}
+          </Text>
+        </View>
 
         <View style={styles.infoRow}>
           <Icon name="location-sharp" size={20} color="#d50000" />
@@ -185,7 +380,23 @@ const ConfirmationScreen: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Botão redondo de feedback (mantido) */}
+      {/* Card de informações do ônibus (aparece quando selecionado) */}
+      {selectedBus && (
+        <View style={styles.busInfoContainer}>
+          <Text style={styles.busInfoTitle}>Ônibus {selectedBus}</Text>
+          <Text style={styles.busInfoText}>
+            Última atualização: {new Date(nearbyBuses.find(b => b.bus_id === selectedBus)?.recorded_at || '').toLocaleTimeString()}
+          </Text>
+          <Text style={styles.busInfoText}>
+            Posição: {nearbyBuses.find(b => b.bus_id === selectedBus)?.latitude.toFixed(6)}, {nearbyBuses.find(b => b.bus_id === selectedBus)?.longitude.toFixed(6)}
+          </Text>
+          <Text style={styles.busInfoText}>
+            Distância: {formatDistance(nearbyBuses.find(b => b.bus_id === selectedBus)?.distance || null)}
+          </Text>
+        </View>
+      )}
+
+      {/* Botão de feedback */}
       <TouchableOpacity
         style={styles.feedbackButton}
         onPress={() => setShowConfirmModal(true)}
@@ -212,7 +423,7 @@ const ConfirmationScreen: React.FC = () => {
                 <View style={styles.modalButtons}>
                   <TouchableOpacity
                     style={[styles.modalBtn, { backgroundColor: '#d50000' }]}
-                    onPress={confirmEmbark}  // <-- chama a função certa
+                    onPress={confirmEmbark}
                   >
                     <Text style={styles.modalBtnText}>Sim</Text>
                   </TouchableOpacity>
@@ -229,7 +440,7 @@ const ConfirmationScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Barra inferior */}
+      {/* Barra de navegação inferior */}
       <View style={styles.bottomNav}>
         <TouchableOpacity onPress={() => navigation.navigate('Home')}>
           <Icon name="home-outline" size={24} color="#666" />
@@ -257,7 +468,6 @@ const ConfirmationScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  // ... (seus estilos originais, sem alteração)
   container: { flex: 1, backgroundColor: '#f8f9fa' },
   mapContainer: { height: '45%', backgroundColor: '#e9ecef' },
   webview: { flex: 1 },
@@ -282,11 +492,42 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16, color: '#000' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  infoText: { marginLeft: 12 },
-  label: { fontSize: 14, color: '#343a40' },
-  text: { fontSize: 16, color: '#000' },
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    color: '#000'
+  },
+  distanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: '#f8f9fa',
+    padding: 12,
+    borderRadius: 8,
+  },
+  distanceText: {
+    marginLeft: 8,
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  infoText: {
+    marginLeft: 12
+  },
+  label: {
+    fontSize: 14,
+    color: '#343a40'
+  },
+  text: {
+    fontSize: 16,
+    color: '#000'
+  },
   button: {
     marginTop: 24,
     backgroundColor: '#d50000',
@@ -294,7 +535,11 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
   },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
   feedbackButton: {
     position: 'absolute',
     bottom: 80,
@@ -332,7 +577,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#000',
   },
-  modalButtons: { flexDirection: 'row', justifyContent: 'space-around' },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around'
+  },
   modalBtn: {
     flex: 1,
     marginHorizontal: 8,
@@ -340,7 +588,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
   },
-  modalBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  modalBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
   bottomNav: {
     height: 60,
     flexDirection: 'row',
@@ -350,15 +602,53 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
   },
-  fabContainer: { width: 60, alignItems: 'center', marginTop: -30 },
-  fab: {
-    width: 60, height: 60, borderRadius: 30,
-    backgroundColor: '#fff', justifyContent: 'center',
-    alignItems: 'center', elevation: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3, shadowRadius: 4.65,
+  fabContainer: {
+    width: 60,
+    alignItems: 'center',
+    marginTop: -30
   },
-  fabText: { fontSize: 32, color: '#000', lineHeight: 36 },
+  fab: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
+  },
+  fabText: {
+    fontSize: 32,
+    color: '#000',
+    lineHeight: 36
+  },
+  busInfoContainer: {
+    position: 'absolute',
+    bottom: 150,
+    left: 20,
+    right: 20,
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  busInfoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#000',
+  },
+  busInfoText: {
+    fontSize: 14,
+    color: '#333',
+  },
 });
 
 export default ConfirmationScreen;

@@ -104,6 +104,17 @@ async function ensureSchema() {
     END
     $$;
   `);
+
+  // Atualize a criação da tabela para incluir um ID e corrigir o nome da coluna
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS onibus_gps (
+      id SERIAL PRIMARY KEY,
+      bus_id TEXT NOT NULL,
+      latitude DECIMAL(10,6) NOT NULL,
+      longitude DECIMAL(10,6) NOT NULL,
+      timestamp TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
 }
 
 // Rotas de registro/login
@@ -210,6 +221,130 @@ app.get('/api/requests/current', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Erro interno no servidor' });
   }
 });
+
+// Rota para atualização de posição de ônibus
+app.post('/api/buses/update', async (req, res) => {
+  const { bus_id, latitude, longitude } = req.body;
+
+  // Validação básica
+  if (!bus_id || latitude === undefined || longitude === undefined) {
+    return res.status(400).json({
+      error: 'bus_id, latitude e longitude são obrigatórios'
+    });
+  }
+
+  try {
+    const result = await pool.query(
+      `INSERT INTO onibus_gps (bus_id, latitude, longitude)
+       VALUES ($1, $2, $3)
+       RETURNING bus_id, latitude, longitude, timestamp as recorded_at`,
+      [bus_id, latitude, longitude]
+    );
+
+    res.status(201).json({
+      success: true,
+      bus: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Erro ao atualizar ônibus:', err);
+    res.status(500).json({
+      error: 'Erro ao atualizar posição do ônibus',
+      details: err.message
+    });
+  }
+});
+
+// Rota para buscar ônibus próximos (com polling)
+// Modifique a rota /api/buses/nearby para incluir cálculo de distância
+app.get('/api/buses/nearby', authenticateToken, async (req, res) => {
+  try {
+    const { latitude, longitude, radius = 2 } = req.query;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        error: 'Parâmetros latitude e longitude são obrigatórios'
+      });
+    }
+
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    const rad = parseFloat(radius) * 1000; // Convertendo para metros
+
+    if (isNaN(lat) || isNaN(lng) || isNaN(rad)) {
+      return res.status(400).json({
+        error: 'Parâmetros devem ser números válidos'
+      });
+    }
+
+    const result = await pool.query(
+      `WITH latest_buses AS (
+         SELECT DISTINCT ON (bus_id)
+           bus_id, latitude, longitude, timestamp as recorded_at
+         FROM onibus_gps
+         ORDER BY bus_id, timestamp DESC
+       )
+       SELECT
+         bus_id,
+         latitude,
+         longitude,
+         recorded_at,
+         ST_Distance(
+           ST_MakePoint(longitude, latitude)::geography,
+           ST_MakePoint($1, $2)::geography
+         ) as distance
+       FROM latest_buses
+       WHERE ST_DWithin(
+         ST_MakePoint(longitude, latitude)::geography,
+         ST_MakePoint($1, $2)::geography,
+         $3
+       )
+       ORDER BY distance ASC
+       LIMIT 10`,  // Limite para evitar retornar muitos resultados
+      [lng, lat, rad]
+    );
+
+    res.json({
+      success: true,
+      buses: result.rows,
+      lastUpdate: new Date().toISOString()
+    });
+
+  } catch (err) {
+    console.error('Erro ao buscar ônibus:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno no servidor',
+      details: err.message
+    });
+  }
+});
+
+
+
+// GET /api/buses/:bus_id/history (sem INTERVAL)
+app.get('/api/buses/:bus_id/history', authenticateToken, async (req, res) => {
+  try {
+    const { bus_id } = req.params;
+    const { hours = 1 } = req.query;
+
+    const result = await pool.query(
+      `SELECT bus_id, latitude, longitude, timestamp as recorded_at
+       FROM onibus_gps
+       WHERE bus_id = $1
+       AND timestamp > (CURRENT_TIMESTAMP - ($2 || ' hours')::interval)
+       ORDER BY timestamp ASC`,
+      [bus_id, hours]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Erro ao buscar histórico:', err);
+    res.status(500).json({
+      error: 'Erro ao buscar histórico do ônibus'
+    });
+  }
+});
+
 
 // ** NOVA ROTA ** PUT /api/requests/current (confirma embarque)
 app.put(
