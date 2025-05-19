@@ -105,7 +105,7 @@ const DestinationScreen: React.FC = () => {
       } else {
         Alert.alert('Não encontrado', 'Destino não encontrado.');
       }
-    } catch {
+    } catch (err) {
         console.error('Erro ao buscar destino:', err);
       Alert.alert('Erro', 'Não foi possível buscar o destino.');
     } finally {

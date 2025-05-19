@@ -7,6 +7,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { AuthContext } from './src/contexts/AuthContext';
 import HomeScreen from './src/screens/HomeScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
 import LocationScreen from './src/screens/LocationScreen';
 import DestinationScreen from './src/screens/DestinationScreen';
 import ConfirmationScreen from './src/screens/ConfirmationScreen';
@@ -50,7 +51,7 @@ export default function App() {
     },
     signOut: () => {
       AsyncStorage.removeItem('userToken');
-      setIsLoggedIn(false);
+      setIsLoggedIn(false); // Isso automaticamente redirecionará para Login
     },
     isLoggedIn,
   }), [isLoggedIn]);
@@ -73,6 +74,7 @@ export default function App() {
               <Stack.Screen name="Location" component={LocationScreen} />
               <Stack.Screen name="Destination" component={DestinationScreen} />
               <Stack.Screen name="Confirmation" component={ConfirmationScreen} />
+              <Stack.Screen name="Profile" component={ProfileScreen} />
             </>
           ) : (
             <>

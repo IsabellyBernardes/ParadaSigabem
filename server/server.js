@@ -117,6 +117,24 @@ async function ensureSchema() {
   `);
 }
 
+// Nova rota para obter dados do usuário
+app.get('/api/user', authenticateToken, async (req, res) => {
+console.log('🔐 Usuario autenticado:', req.user);
+  try {
+    const result = await pool.query(
+      'SELECT id, cpf, created_at FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Erro ao buscar usuário:', err);
+    res.status(500).json({ error: 'Erro interno no servidor' });
+  }
+});
+
 // Rotas de registro/login
 app.post('/api/register', async (req, res) => {
   const { cpf, password } = req.body;

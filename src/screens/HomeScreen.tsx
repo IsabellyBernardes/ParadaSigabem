@@ -41,13 +41,6 @@ export default function HomeScreen() {
         </View>
       </View>
 
-        {/* Botão de logout */}
-      <TouchableOpacity onPress={signOut} style={[styles.button, { marginTop: 20 }]}>
-        <Icon name="log-out-outline" size={20} color="black" />
-        <Text style={styles.buttonLabel}>Sair</Text>
-      </TouchableOpacity>
-
-
       {/* Barra de Navegação Inferior + FAB */}
       <View style={styles.bottomNav}>
         <TouchableOpacity onPress={() => navigation.navigate('Home')}>
