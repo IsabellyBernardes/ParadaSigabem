@@ -365,34 +365,40 @@ app.get('/api/buses/:bus_id/history', authenticateToken, async (req, res) => {
 
 
 // ** NOVA ROTA ** PUT /api/requests/current (confirma embarque)
-app.put(
-  '/api/requests/current',
-  authenticateToken,
-  async (req, res) => {
-    try {
-      const userId = req.user.id;
-      const result = await pool.query(
-        `UPDATE requests
-         SET requested = false
-         WHERE user_id = $1
-         RETURNING *`,
-        [userId]
-      );
-      if (result.rowCount === 0) {
-        return res
-          .status(404)
-          .json({ error: 'Nenhuma solicitação ativa encontrada' });
-      }
-      res.json({
-        message: 'Embarque confirmado com sucesso',
-        request: result.rows[0],
+app.put('/api/requests/current', authenticateToken, async (req, res) => {
+  try {
+    console.log('Recebida requisição PUT'); // Log de debug
+    const userId = req.user.id;
+
+    const result = await pool.query(
+      `UPDATE requests
+       SET requested = false
+       WHERE user_id = $1
+       RETURNING *`,
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Nenhuma solicitação ativa encontrada'
       });
-    } catch (err) {
-      console.error('Erro ao confirmar embarque:', err);
-      res.status(500).json({ error: 'Erro interno no servidor' });
     }
+
+    res.json({
+      success: true,
+      message: 'Embarque confirmado com sucesso',
+      request: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error('Erro no servidor:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno no servidor'
+    });
   }
-);
+});
 
 // Healthcheck
 app.get('/api/test', (req, res) => {

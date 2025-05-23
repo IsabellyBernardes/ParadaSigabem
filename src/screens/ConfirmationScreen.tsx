@@ -146,6 +146,33 @@ const ConfirmationScreen: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const safeSetLoading = (value: boolean) => {
+      if (isMounted) setLoadingRoute(value);
+    };
+
+    fetchNearbyBuses();
+
+    pollingInterval.current = setInterval(fetchNearbyBuses, 5000);
+
+    fallbackTimeout.current = setTimeout(() => {
+      safeSetLoading(false);
+    }, 15000);
+
+    return () => {
+      isMounted = false;
+      if (pollingInterval.current) {
+        clearInterval(pollingInterval.current);
+      }
+      if (fallbackTimeout.current) {
+        clearTimeout(fallbackTimeout.current);
+      }
+    };
+  }, [originLocation]);
+
+
   // Inicia polling quando a tela é montada
   useEffect(() => {
     fetchNearbyBuses();
@@ -314,15 +341,26 @@ const ConfirmationScreen: React.FC = () => {
     setConfirming(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const resp = await fetch(`${API_URL}/api/requests/current`, {
+      if (!token) {
+        throw new Error('Token não encontrado');
+      }
+
+        console.log('Iniciando confirmação...');
+      const response = await fetch(`${API_URL}/api/requests/current`, {
         method: 'PUT',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        body: JSON.stringify({ confirm: true }) // Adicione um body simples
       });
 
-      if (!resp.ok) throw new Error(`Status ${resp.status}`);
+      console.log('Status da resposta:', response.status); // Log para debug
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+      }
 
       // Limpa dados da solicitação ativa
       await AsyncStorage.multiRemove([
@@ -340,13 +378,21 @@ const ConfirmationScreen: React.FC = () => {
           text: 'OK',
           onPress: () => {
             setShowConfirmModal(false);
-            navigation.navigate('Home');
+            if (navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              navigation.navigate('Home');
+            }
+
           },
         },
       ]);
-    } catch (err: any) {
-      console.error('Erro na confirmação:', err);
-      Alert.alert('Erro', 'Não foi possível confirmar o embarque.');
+    } catch (error: any) {
+      console.error('Erro completo na confirmação:', error);
+      Alert.alert(
+        'Erro',
+        error.message || 'Não foi possível confirmar o embarque'
+      );
     } finally {
       setConfirming(false);
     }

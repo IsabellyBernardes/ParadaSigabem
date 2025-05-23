@@ -89,6 +89,12 @@ const DestinationScreen: React.FC = () => {
   const [loadingRoute, setLoadingRoute] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
 
+    if (!destLocation) {
+      Alert.alert('Erro', 'Busque um destino primeiro.');
+      return;
+    }
+
+
   const handleSearchDestination = async () => {
     if (!destination.trim()) {
       Alert.alert('Erro', 'Digite um destino.');
