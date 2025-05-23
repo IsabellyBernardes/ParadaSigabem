@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator
 } from 'react-native';
+import { API_URL } from '../config'
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContext } from '../contexts/AuthContext';
@@ -43,7 +44,7 @@ const LoginScreen: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const resp = await fetch('http://192.168.126.112:5000/api/login', {
+      const resp = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

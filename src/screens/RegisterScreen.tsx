@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator
 } from 'react-native';
+import { API_URL } from '../config'
 import Icon from 'react-native-vector-icons/Ionicons';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -84,7 +85,7 @@ const RegisterScreen: React.FC = () => {
 
     try {
       // Chamada para a API de registro
-      const response = await fetch('http://192.168.127.156:5000/api/register', {
+      const response = await fetch(`${API_URL}/api/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -12,6 +12,9 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import { AuthContext } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Alert } from 'react-native';
+
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
@@ -51,12 +54,50 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <View style={styles.fabContainer}>
+        {/* Não permite que inicie uma nova solicitação, caso tenha uma ativa*/}
           <TouchableOpacity
             style={styles.fab}
-            onPress={() => navigation.navigate('Location')}
+            onPress={async () => {
+              const pending = await AsyncStorage.getItem('pendingRequest');
+
+              if (pending === 'true') {
+                // Recupera os dados da solicitação salva no AsyncStorage
+                const origin = await AsyncStorage.getItem('origin');
+                const destination = await AsyncStorage.getItem('destination');
+                const originLat = await AsyncStorage.getItem('originLat');
+                const originLng = await AsyncStorage.getItem('originLng');
+                const destLat = await AsyncStorage.getItem('destLat');
+                const destLng = await AsyncStorage.getItem('destLng');
+
+                // Garante que todos os dados estão disponíveis
+                if (
+                  origin && destination &&
+                  originLat && originLng &&
+                  destLat && destLng
+                ) {
+                  navigation.navigate('Confirmation', {
+                    origin,
+                    destination,
+                    originLocation: { latitude: Number(originLat), longitude: Number(originLng) },
+                    destLocation: { latitude: Number(destLat), longitude: Number(destLng) }
+                  });
+                } else {
+                  Alert.alert(
+                    'Erro',
+                    'Informações da solicitação pendente estão incompletas.'
+                  );
+                }
+
+                return;
+              }
+
+              // Caso não haja pendência, iniciar nova solicitação
+              navigation.navigate('Location');
+            }}
           >
             <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
+
         </View>
 
         <TouchableOpacity onPress={() => navigation.navigate('History')}>

@@ -8,11 +8,14 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  Vibration,
 } from 'react-native';
+import { API_URL } from '../config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
+
 
 interface Location {
   latitude: number;
@@ -53,13 +56,22 @@ const ConfirmationScreen: React.FC = () => {
   const [nearestBusDistance, setNearestBusDistance] = useState<number | null>(null);
   const pollingInterval = useRef<NodeJS.Timeout | null>(null);
   const fallbackTimeout = useRef<NodeJS.Timeout | null>(null);
+  const webviewRef = useRef<WebView>(null);
+  const hasVibrated = useRef(false);
+
+
 
   // Função para formatar a distância
-  const formatDistance = (meters: number | null) => {
-    if (meters === null) return 'Calculando...';
-    if (meters < 1000) return `${Math.round(meters)} metros`;
-    return `${(meters / 1000).toFixed(1)} km`;
+  const formatTimeEstimate = (meters: number | null) => {
+    if (meters === null || isNaN(meters)) return 'Calculando...';
+    const speedMps = 8.33; // 30 km/h em m/s
+    const seconds = meters / speedMps;
+
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    const minutes = Math.round(seconds / 60);
+    return `${minutes} min`;
   };
+
 
   // Modifique a função fetchNearbyBuses para lidar melhor com erros:
   const fetchNearbyBuses = async () => {
@@ -69,7 +81,7 @@ const ConfirmationScreen: React.FC = () => {
         throw new Error('Usuário não autenticado');
       }
 
-      const url = `http://192.168.126.112:5000/api/buses/nearby?latitude=${originLocation.latitude}&longitude=${originLocation.longitude}&radius=2`;
+      const url = `${API_URL}/api/buses/nearby?latitude=${originLocation.latitude}&longitude=${originLocation.longitude}&radius=2`;
       console.log('URL da API:', url);
       const response = await fetch(url, {
         headers: {
@@ -100,12 +112,27 @@ const ConfirmationScreen: React.FC = () => {
 
       // Atualização do estado
       setNearbyBuses(data.buses);
+      if (webviewRef.current) {
+        webviewRef.current.postMessage(JSON.stringify({
+          type: 'UPDATE_BUSES',
+          buses: data.buses,
+        }));
+      }
+
       setLastUpdate(new Date().toISOString());
 
       // Calcula e armazena a distância do ônibus mais próximo
       if (data.buses && data.buses.length > 0) {
         const nearest = data.buses[0].distance; // Já vem ordenado por distância
         setNearestBusDistance(nearest);
+        // Vibra se estiver a menos de 20 segundos da chegada
+        if (typeof nearest === 'number' && nearest / 8.33 < 20 && !hasVibrated.current) {
+          const pattern = [0, 300, 300, 300, 300, 300, 300, 300]; // Vibra 4 vezes
+          Vibration.vibrate(pattern);
+          hasVibrated.current = true;
+        } else if (nearest && nearest / 8.33 >= 20) {
+          hasVibrated.current = false; // Reseta se se afastar novamente
+        }
       } else {
         setNearestBusDistance(null);
       }
@@ -147,7 +174,7 @@ const ConfirmationScreen: React.FC = () => {
       try {
         const token = await AsyncStorage.getItem('userToken');
         const resp = await fetch(
-          `http://192.168.126.112:5000/api/buses/${selectedBus}/history`,
+          `${API_URL}/api/buses/${selectedBus}/history`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -255,6 +282,29 @@ const ConfirmationScreen: React.FC = () => {
     map.whenReady(() => {
       window.ReactNativeWebView.postMessage('MAP_LOADED');
     });
+    window.addEventListener('message', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'UPDATE_BUSES') {
+          updateBusMarkers(data.buses);
+        }
+      } catch (e) {
+        console.error('Erro ao interpretar mensagem:', e);
+      }
+    });
+
+    let busMarkers = [];
+    function updateBusMarkers(newBuses) {
+      busMarkers.forEach(m => map.removeLayer(m));
+      busMarkers = [];
+      newBuses.forEach(bus => {
+        const marker = L.marker([bus.latitude, bus.longitude], { icon: busIcon })
+          .addTo(map)
+          .bindPopup("Ônibus " + bus.bus_id);
+        busMarkers.push(marker);
+      });
+    }
+
   </script>
 </body>
 </html>
@@ -264,7 +314,7 @@ const ConfirmationScreen: React.FC = () => {
     setConfirming(true);
     try {
       const token = await AsyncStorage.getItem('userToken');
-      const resp = await fetch('http://192.168.126.112:5000/api/requests/current', {
+      const resp = await fetch(`${API_URL}/api/requests/current`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -274,21 +324,26 @@ const ConfirmationScreen: React.FC = () => {
 
       if (!resp.ok) throw new Error(`Status ${resp.status}`);
 
-      Alert.alert(
-        'Sucesso',
-        'Embarque confirmado!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setShowConfirmModal(false);
-              navigation.navigate('Home');
-            }
-          }
-        ],
-        { cancelable: false }
-      );
+      // Limpa dados da solicitação ativa
+      await AsyncStorage.multiRemove([
+        'pendingRequest',
+        'origin',
+        'destination',
+        'originLat',
+        'originLng',
+        'destLat',
+        'destLng',
+      ]);
 
+      Alert.alert('Sucesso', 'Embarque confirmado!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            setShowConfirmModal(false);
+            navigation.navigate('Home');
+          },
+        },
+      ]);
     } catch (err: any) {
       console.error('Erro na confirmação:', err);
       Alert.alert('Erro', 'Não foi possível confirmar o embarque.');
@@ -296,6 +351,7 @@ const ConfirmationScreen: React.FC = () => {
       setConfirming(false);
     }
   };
+
 
   const handleMessage = (e: WebViewMessageEvent) => {
     const data = e.nativeEvent.data;
@@ -351,7 +407,7 @@ const ConfirmationScreen: React.FC = () => {
         <View style={styles.distanceContainer}>
           <Icon name="bus" size={20} color="#d50000" />
           <Text style={styles.distanceText}>
-            Ônibus mais próximo: {formatDistance(nearestBusDistance)}
+            Ônibus mais próximo: {formatTimeEstimate(nearestBusDistance)}
           </Text>
         </View>
 
@@ -391,7 +447,7 @@ const ConfirmationScreen: React.FC = () => {
             Posição: {nearbyBuses.find(b => b.bus_id === selectedBus)?.latitude.toFixed(6)}, {nearbyBuses.find(b => b.bus_id === selectedBus)?.longitude.toFixed(6)}
           </Text>
           <Text style={styles.busInfoText}>
-            Distância: {formatDistance(nearbyBuses.find(b => b.bus_id === selectedBus)?.distance || null)}
+            Distância: {formatTimeEstimate(nearbyBuses.find(b => b.bus_id === selectedBus)?.distance || null)}
           </Text>
         </View>
       )}
@@ -448,13 +504,25 @@ const ConfirmationScreen: React.FC = () => {
         <TouchableOpacity onPress={() => navigation.navigate('Search')}>
           <Icon name="search-outline" size={24} color="#666" />
         </TouchableOpacity>
+        {/* Não permite que inicie uma nova solicitação, caso tenha uma ativa*/}
         <View style={styles.fabContainer}>
           <TouchableOpacity
             style={styles.fab}
-            onPress={() => navigation.navigate('Location')}
+            onPress={async () => {
+              const pending = await AsyncStorage.getItem('pendingRequest');
+              if (pending === 'true') {
+                Alert.alert(
+                  'Solicitação pendente',
+                  'Você já fez uma solicitação. Confirme o embarque ou use o botão de denúncia antes de continuar.'
+                );
+                return;
+              }
+              navigation.navigate('Location');
+            }}
           >
             <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
+
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('History')}>
           <Icon name="time-outline" size={24} color="#666" />

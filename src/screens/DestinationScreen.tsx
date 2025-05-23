@@ -11,6 +11,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { API_URL } from '../config';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Ionicons';
@@ -180,8 +181,14 @@ const DestinationScreen: React.FC = () => {
       Alert.alert('Erro', 'Busque um destino primeiro.');
       return;
     }
-    const payload = { origin, destination, requested: true, timestamp: new Date().toISOString() };
-    const url = 'http://192.168.126.112:5000/api/requests';
+
+    const payload = {
+      origin,
+      destination,
+      requested: true,
+      timestamp: new Date().toISOString(),
+    };
+    const url = `${API_URL}/api/requests`;
 
     setSending(true);
     try {
@@ -192,13 +199,29 @@ const DestinationScreen: React.FC = () => {
         navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
         return;
       }
-      navigation.navigate('Confirmation', { origin, destination, originLocation, destLocation: destLocation! });
+
+      // Salva os dados da solicitação ativa
+      await AsyncStorage.setItem('pendingRequest', 'true');
+      await AsyncStorage.setItem('origin', origin);
+      await AsyncStorage.setItem('destination', destination);
+      await AsyncStorage.setItem('originLat', originLocation.latitude.toString());
+      await AsyncStorage.setItem('originLng', originLocation.longitude.toString());
+      await AsyncStorage.setItem('destLat', destLocation.latitude.toString());
+      await AsyncStorage.setItem('destLng', destLocation.longitude.toString());
+
+      navigation.navigate('Confirmation', {
+        origin,
+        destination,
+        originLocation,
+        destLocation,
+      });
     } catch {
       Alert.alert('Erro', 'Não foi possível enviar o pedido.');
     } finally {
       setSending(false);
     }
   };
+
 
   return (
     <View style={styles.container}>
@@ -270,9 +293,24 @@ const DestinationScreen: React.FC = () => {
           <Icon name="search-outline" size={24} color="#666" />
         </TouchableOpacity>
         <View style={styles.fabContainer}>
-          <TouchableOpacity style={styles.fab} onPress={() => navigation.navigate('Location')}>
+        {/* Não permite que inicie uma nova solicitação, caso tenha uma ativa*/}
+          <TouchableOpacity
+            style={styles.fab}
+            onPress={async () => {
+              const pending = await AsyncStorage.getItem('pendingRequest');
+              if (pending === 'true') {
+                Alert.alert(
+                  'Solicitação pendente',
+                  'Você já fez uma solicitação. Confirme o embarque ou use o botão de denúncia antes de continuar.'
+                );
+                return;
+              }
+              navigation.navigate('Location');
+            }}
+          >
             <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
+
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('History')}>
           <Icon name="time-outline" size={24} color="#666" />

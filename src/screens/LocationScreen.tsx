@@ -269,12 +269,24 @@ const LocationScreen: React.FC = () => {
           <Icon name="search-outline" size={24} color="#666" />
         </TouchableOpacity>
         <View style={styles.fabContainer}>
+        {/* Não permite que inicie uma nova solicitação, caso tenha uma ativa*/}
           <TouchableOpacity
             style={styles.fab}
-            onPress={() => navigation.navigate('Location')}
+            onPress={async () => {
+              const pending = await AsyncStorage.getItem('pendingRequest');
+              if (pending === 'true') {
+                Alert.alert(
+                  'Solicitação pendente',
+                  'Você já fez uma solicitação. Confirme o embarque ou use o botão de denúncia antes de continuar.'
+                );
+                return;
+              }
+              navigation.navigate('Location');
+            }}
           >
             <Text style={styles.fabText}>+</Text>
           </TouchableOpacity>
+
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('History')}>
           <Icon name="time-outline" size={24} color="#666" />
