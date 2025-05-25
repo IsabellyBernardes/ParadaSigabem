@@ -90,9 +90,11 @@ const LocationScreen: React.FC = () => {
           const addr = data.address || {};
           const street = addr.road || addr.pedestrian || addr.residential || '';
           const neighbourhood = addr.suburb || addr.neighbourhood || addr.district || '';
-          const formatted = street
-            ? `${street}${neighbourhood ? ', ' + neighbourhood : ''}`
-            : data.display_name.split(',').slice(0,2).join(',').trim();
+          const formatted =
+            (street || neighbourhood)
+              ? `${street || ''}${neighbourhood ? ', ' + neighbourhood : ''}`.trim()
+              : (data.display_name ? data.display_name.split(',').slice(0, 2).join(',').trim() : '');
+
 
           setAddress(formatted);
         } catch {
@@ -114,22 +116,35 @@ const LocationScreen: React.FC = () => {
       Alert.alert('Erro', 'Digite um endereço.');
       return;
     }
+
     setLoading(true);
     try {
       const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-          address
-        )}`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`,
+        {
+          headers: {
+            'User-Agent': 'SigabemAPP/1.0 (contato@sigabem.com)', // personalize
+          },
+        }
       );
-      const results = (await resp.json()) as Array<{ lat: string; lon: string }>;
+
+      const text = await resp.text();
+      if (!resp.ok || (!text.trim().startsWith('{') && !text.trim().startsWith('['))) {
+        console.error('Resposta inesperada:', text.slice(0, 200));
+        throw new Error('Resposta da API não é um JSON válido');
+      }
+
+      const results = JSON.parse(text) as Array<{ lat: string; lon: string }>;
+
       if (results.length > 0) {
         const { lat, lon } = results[0];
         setLocation({ latitude: parseFloat(lat), longitude: parseFloat(lon) });
       } else {
         Alert.alert('Não encontrado', 'Endereço não encontrado.');
       }
-    } catch {
-      Alert.alert('Erro', 'Não foi possível buscar o endereço.');
+    } catch (err: any) {
+      console.error('Erro ao buscar endereço:', err);
+      Alert.alert('Erro', err.message || 'Não foi possível buscar o endereço.');
     } finally {
       setLoading(false);
     }
@@ -245,9 +260,16 @@ const LocationScreen: React.FC = () => {
           style={styles.saveButton}
           onPress={() => {
             if (!location) {
-              Alert.alert('Erro', 'Busque sua localização primeiro.');
+              Alert.alert('Erro', 'Localização inválida. Clique em buscar ou usar localização atual.');
               return;
             }
+
+            if (!address.trim()) {
+              Alert.alert('Erro', 'Endereço vazio. Aguarde o carregamento após selecionar a localização.');
+              return;
+            }
+        console.log('🏁 Salvando endereço com:', { address, location });
+
             navigation.navigate('Destination', {
               origin: address,
               originLocation: {
@@ -257,6 +279,7 @@ const LocationScreen: React.FC = () => {
             });
           }}
         >
+
           <Text style={styles.saveText}>Salvar endereço</Text>
         </TouchableOpacity>
       </View>

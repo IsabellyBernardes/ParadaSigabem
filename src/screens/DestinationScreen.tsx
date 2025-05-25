@@ -89,12 +89,6 @@ const DestinationScreen: React.FC = () => {
   const [loadingRoute, setLoadingRoute] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
 
-    if (!destLocation) {
-      Alert.alert('Erro', 'Busque um destino primeiro.');
-      return;
-    }
-
-
   const handleSearchDestination = async () => {
     if (!destination.trim()) {
       Alert.alert('Erro', 'Digite um destino.');
@@ -103,9 +97,23 @@ const DestinationScreen: React.FC = () => {
     setLoadingRoute(true);
     try {
       const resp = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destination)}`
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destination)}`,
+        {
+          headers: {
+            'User-Agent': 'SigabemAPP/1.0 (leandro@sigabem.com.br)',
+          },
+        }
       );
-      const results = (await resp.json()) as Array<{ lat: string; lon: string }>;
+
+      const text = await resp.text();
+
+      if (!resp.ok || (!text.trim().startsWith('{') && !text.trim().startsWith('['))) {
+        console.error('Resposta inesperada:', text.slice(0, 300));
+        throw new Error('Resposta da API não é um JSON válido');
+      }
+
+      const results = JSON.parse(text); // ✅ só agora faz o parse
+
       if (results.length > 0) {
         const { lat, lon } = results[0];
         setDestLocation({ latitude: parseFloat(lat), longitude: parseFloat(lon) });

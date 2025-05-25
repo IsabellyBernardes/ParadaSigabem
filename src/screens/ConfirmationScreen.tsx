@@ -148,50 +148,37 @@ const ConfirmationScreen: React.FC = () => {
 
   useEffect(() => {
     let isMounted = true;
+    let polling: NodeJS.Timeout | null = null;
+    let fallback: NodeJS.Timeout | null = null;
 
-    const safeSetLoading = (value: boolean) => {
-      if (isMounted) setLoadingRoute(value);
+    const startPolling = async () => {
+      const pending = await AsyncStorage.getItem('pendingRequest');
+      if (pending !== 'true') {
+        console.log('🔁 Não há solicitação pendente. Polling não será iniciado.');
+        return;
+      }
+
+      console.log('🔁 Iniciando polling dos ônibus...');
+      fetchNearbyBuses(); // chamada inicial
+
+      polling = setInterval(() => {
+        fetchNearbyBuses();
+      }, 5000);
+
+      fallback = setTimeout(() => {
+        if (isMounted) setLoadingRoute(false);
+      }, 15000);
     };
 
-    fetchNearbyBuses();
-
-    pollingInterval.current = setInterval(fetchNearbyBuses, 5000);
-
-    fallbackTimeout.current = setTimeout(() => {
-      safeSetLoading(false);
-    }, 15000);
+    startPolling();
 
     return () => {
       isMounted = false;
-      if (pollingInterval.current) {
-        clearInterval(pollingInterval.current);
-      }
-      if (fallbackTimeout.current) {
-        clearTimeout(fallbackTimeout.current);
-      }
+      if (polling) clearInterval(polling);
+      if (fallback) clearTimeout(fallback);
     };
-  }, [originLocation]);
+  }, []);
 
-
-  // Inicia polling quando a tela é montada
-  useEffect(() => {
-    fetchNearbyBuses();
-    pollingInterval.current = setInterval(fetchNearbyBuses, 5000);
-
-    // Timeout de fallback para o spinner
-    fallbackTimeout.current = setTimeout(() => {
-      setLoadingRoute(false);
-    }, 15000);
-
-    return () => {
-      if (pollingInterval.current) {
-        clearInterval(pollingInterval.current);
-      }
-      if (fallbackTimeout.current) {
-        clearTimeout(fallbackTimeout.current);
-      }
-    };
-  }, [originLocation]);
 
   // Busca histórico quando um ônibus é selecionado
   useEffect(() => {
@@ -373,20 +360,23 @@ const ConfirmationScreen: React.FC = () => {
         'destLng',
       ]);
 
+
+      await AsyncStorage.removeItem('pendingRequest');
+
+
       Alert.alert('Sucesso', 'Embarque confirmado!', [
         {
           text: 'OK',
           onPress: () => {
             setShowConfirmModal(false);
-            if (navigation.canGoBack()) {
-              navigation.goBack();
-            } else {
-              navigation.navigate('Home');
-            }
-
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Home' }],
+            });
           },
         },
       ]);
+
     } catch (error: any) {
       console.error('Erro completo na confirmação:', error);
       Alert.alert(

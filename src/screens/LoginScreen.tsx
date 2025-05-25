@@ -14,9 +14,12 @@ import { API_URL } from '../config'
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContext } from '../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
+
 
 const LoginScreen: React.FC = () => {
   const { signIn } = useContext(AuthContext);
+  const navigation = useNavigation<any>();
   const [cpf, setCpf] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -115,12 +118,12 @@ const LoginScreen: React.FC = () => {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.link}
-          onPress={() => signIn('dummy-token')} // opcional: redireciona à pilha Auth → Register
-          disabled={isLoading}
-        >
-          <Text style={styles.linkText}>Não tem uma conta? Cadastre-se</Text>
-        </TouchableOpacity>
+                  style={styles.link}
+                  onPress={() => navigation.navigate('Register')} // ✅ corrigido
+                  disabled={isLoading}
+                >
+                  <Text style={styles.linkText}>Não tem uma conta? Cadastre-se</Text>
+                </TouchableOpacity>
       </View>
     </View>
   );
