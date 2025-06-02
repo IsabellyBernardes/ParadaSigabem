@@ -24,10 +24,12 @@ interface Location {
 
 interface Bus {
   bus_id: string;
-  latitude: number;
-  longitude: number;
-  recorded_at: string;
-  distance?: number; // Adicionando campo distance
+    latitude: number;
+    longitude: number;
+    recorded_at: string;
+    distance?: number;
+    velocidade?: number;
+    trip_headsign?: string;
 }
 
 type RootStackParamList = {
@@ -62,12 +64,12 @@ const ConfirmationScreen: React.FC = () => {
 
 
   // Função para formatar a distância
-  const formatTimeEstimate = (meters: number | null) => {
-    if (meters === null || isNaN(meters)) return 'Calculando...';
-    const speedMps = 8.33; // 30 km/h em m/s
-    const seconds = meters / speedMps;
-
-    if (seconds < 60) return `${Math.round(seconds)}s`;
+  function formatTimeEstimate(distance: number | null, speed: number | null) {
+    if (distance == null || speed == null || speed <= 0) return 'Calculando...';
+    const seconds = distance / speed;
+    if (seconds < 60) {
+      return `${Math.round(seconds)}s`;
+    }
     const minutes = Math.round(seconds / 60);
     return `${minutes} min`;
   };
@@ -123,15 +125,29 @@ const ConfirmationScreen: React.FC = () => {
 
       // Calcula e armazena a distância do ônibus mais próximo
       if (data.buses && data.buses.length > 0) {
-        const nearest = data.buses[0].distance; // Já vem ordenado por distância
-        setNearestBusDistance(nearest);
+        const nearestBus = data.buses[0];
+        const nearestDistance = nearestBus.distance;
+        const velocidade = nearestBus.velocidade;
+        setNearestBusDistance(nearestDistance);
+
         // Vibra se estiver a menos de 20 segundos da chegada
-        if (typeof nearest === 'number' && nearest / 8.33 < 20 && !hasVibrated.current) {
-          const pattern = [0, 300, 300, 300, 300, 300, 300, 300]; // Vibra 4 vezes
+        if (
+          typeof nearestDistance === 'number' &&
+          typeof velocidade === 'number' &&
+          velocidade > 0 &&
+          nearestDistance / velocidade < 20 &&
+          !hasVibrated.current
+        ) {
+          const pattern = [0, 300, 300, 300, 300, 300, 300, 300];
           Vibration.vibrate(pattern);
           hasVibrated.current = true;
-        } else if (nearest && nearest / 8.33 >= 20) {
-          hasVibrated.current = false; // Reseta se se afastar novamente
+        } else if (
+          typeof nearestDistance === 'number' &&
+          typeof velocidade === 'number' &&
+          velocidade > 0 &&
+          nearestDistance / velocidade >= 20
+        ) {
+          hasVibrated.current = false;
         }
       } else {
         setNearestBusDistance(null);
@@ -326,67 +342,75 @@ const ConfirmationScreen: React.FC = () => {
 
   const confirmEmbark = async () => {
     setConfirming(true);
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) {
-        throw new Error('Token não encontrado');
-      }
+      try {
+        const token = await AsyncStorage.getItem('userToken');
+        if (!token) {
+          throw new Error('Token não encontrado');
+        }
 
-        console.log('Iniciando confirmação...');
-      const response = await fetch(`${API_URL}/api/requests/current`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ confirm: true }) // Adicione um body simples
-      });
+        // Se não há ônibus na lista, não faz sentido prosseguir
+        if (nearbyBuses.length === 0) {
+          throw new Error('Não há ônibus próximo para confirmar embarque');
+        }
 
-      console.log('Status da resposta:', response.status); // Log para debug
+        // Vamos pegar o trip_headsign do ônibus mais próximo (índice zero)
+        const chosenTrip = nearbyBuses[0].trip_headsign;
+        if (!chosenTrip) {
+          throw new Error('Dados do trip_headsign do ônibus não estão disponíveis');
+        }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
-      }
+        console.log('Iniciando confirmação para a linha:', chosenTrip);
 
-      // Limpa dados da solicitação ativa
-      await AsyncStorage.multiRemove([
-        'pendingRequest',
-        'origin',
-        'destination',
-        'originLat',
-        'originLng',
-        'destLat',
-        'destLng',
-      ]);
-
-
-      await AsyncStorage.removeItem('pendingRequest');
-
-
-      Alert.alert('Sucesso', 'Embarque confirmado!', [
-        {
-          text: 'OK',
-          onPress: () => {
-            setShowConfirmModal(false);
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Home' }],
-            });
+        const response = await fetch(`${API_URL}/api/requests/current`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
           },
-        },
-      ]);
+          body: JSON.stringify({
+            // a rota do servidor espera exatamente { trip_headsign: string }
+            trip_headsign: chosenTrip
+          }),
+        });
 
-    } catch (error: any) {
-      console.error('Erro completo na confirmação:', error);
-      Alert.alert(
-        'Erro',
-        error.message || 'Não foi possível confirmar o embarque'
-      );
-    } finally {
-      setConfirming(false);
-    }
-  };
+        console.log('Status da resposta:', response.status);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Erro HTTP: ${response.status}`);
+        }
+
+        // Se chegou até aqui, o servidor já marcou requested = false e incrementou total_request
+        await AsyncStorage.multiRemove([
+          'pendingRequest',
+          'origin',
+          'destination',
+          'originLat',
+          'originLng',
+          'destLat',
+          'destLng',
+        ]);
+        await AsyncStorage.removeItem('pendingRequest');
+
+        Alert.alert('Sucesso', 'Embarque confirmado!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              setShowConfirmModal(false);
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Home' }],
+              });
+            },
+          },
+        ]);
+      } catch (error: any) {
+        console.error('Erro completo na confirmação:', error);
+        Alert.alert('Erro', error.message || 'Não foi possível confirmar o embarque');
+      } finally {
+        setConfirming(false);
+      }
+    };
 
 
   const handleMessage = (e: WebViewMessageEvent) => {
@@ -442,9 +466,15 @@ const ConfirmationScreen: React.FC = () => {
         {/* Adicionando a distância do ônibus mais próximo */}
         <View style={styles.distanceContainer}>
           <Icon name="bus" size={20} color="#d50000" />
-          <Text style={styles.distanceText}>
-            Ônibus mais próximo: {formatTimeEstimate(nearestBusDistance)}
-          </Text>
+            {nearbyBuses.length > 0 && (
+              <Text style={styles.distanceText}>
+
+               {nearbyBuses[0].trip_headsign} – {formatTimeEstimate(
+                 nearbyBuses[0].distance,
+                 nearbyBuses[0].velocidade
+               )}
+              </Text>
+          )}
         </View>
 
         <View style={styles.infoRow}>
