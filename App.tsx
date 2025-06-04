@@ -6,11 +6,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { AuthContext } from './src/contexts/AuthContext'; // <–– importe o contexto
-import HomeScreen from './src/screens/HomeScreen';
 import LocationScreen from './src/screens/LocationScreen';
 import DestinationScreen from './src/screens/DestinationScreen';
 import ConfirmationScreen from './src/screens/ConfirmationScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 
@@ -94,8 +92,6 @@ export default function App() {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isLoggedIn ? (
             <>
-              <Stack.Screen name="Home" component={HomeScreen} />
-              <Stack.Screen name="Profile" component={ProfileScreen} />
               <Stack.Screen name="Location" component={LocationScreen} />
               <Stack.Screen name="Destination" component={DestinationScreen} />
               <Stack.Screen name="Confirmation" component={ConfirmationScreen} />
