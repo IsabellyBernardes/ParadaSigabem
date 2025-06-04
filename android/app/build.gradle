@@ -94,7 +94,7 @@ android {
         release {
             storeFile file("my-release-key.keystore")
             storePassword "sigabem2025"
-            keyAlias "my-key-alias"
+            keyAlias "app_key_alias"
             keyPassword "sigabem2025"
         }
     }
