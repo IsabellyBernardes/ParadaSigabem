@@ -663,6 +663,34 @@ app.put('/api/requests/current', authenticateToken, async (req, res) => {
   }
 });
 
+app.post('/api/dev-login', async (req, res) => {
+  try {
+    const DEV_USER_ID = 2; // ajuste para o ID que você inseriu no passo anterior
+
+    // Busca cpf e id daquele usuário
+    const result = await pool.query(
+      'SELECT id, cpf FROM users WHERE id = $2',
+      [DEV_USER_ID]
+    );
+    if (!result.rows.length) {
+      return res.status(404).json({ error: 'Usuário de teste não encontrado' });
+    }
+    const user = result.rows[0];
+
+    // Gera o token da mesma forma que a rota /api/login faria
+    const token = jwt.sign(
+      { id: user.id, cpf: user.cpf },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    return res.json({ token, userId: user.id });
+  } catch (err) {
+    console.error('Erro no dev-login:', err);
+    return res.status(500).json({ error: 'Erro interno no servidor (dev-login)' });
+  }
+});
+
 
 // -------------------------------------------------------------
 // Healthcheck

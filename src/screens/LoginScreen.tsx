@@ -1,5 +1,4 @@
 // src/screens/LoginScreen.tsx
-
 import React, { useState, useContext } from 'react';
 import {
   View,
@@ -8,14 +7,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
 } from 'react-native';
-import { API_URL } from '../config'
+import { API_URL } from '../config';
 import Icon from 'react-native-vector-icons/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthContext } from '../contexts/AuthContext';
 import { useNavigation } from '@react-navigation/native';
-
 
 const LoginScreen: React.FC = () => {
   const { signIn } = useContext(AuthContext);
@@ -24,7 +22,6 @@ const LoginScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // formata o CPF enquanto digita
   const formatCpf = (input: string) => {
     const numeric = input.replace(/\D/g, '');
     if (numeric.length <= 3) return numeric;
@@ -32,7 +29,7 @@ const LoginScreen: React.FC = () => {
       return `${numeric.slice(0, 3)}.${numeric.slice(3)}`;
     if (numeric.length <= 9)
       return `${numeric.slice(0, 3)}.${numeric.slice(3, 6)}.${numeric.slice(6)}`;
-    return `${numeric.slice(0,3)}.${numeric.slice(3,6)}.${numeric.slice(6,9)}-${numeric.slice(9,11)}`;
+    return `${numeric.slice(0, 3)}.${numeric.slice(3, 6)}.${numeric.slice(6, 9)}-${numeric.slice(9, 11)}`;
   };
 
   const handleCpfChange = (text: string) => {
@@ -47,31 +44,41 @@ const LoginScreen: React.FC = () => {
     setIsLoading(true);
 
     try {
+      console.log('🚀 Tentando logar com CPF:', cpf.replace(/\D/g, ''));
       const resp = await fetch(`${API_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cpf: cpf.replace(/\D/g, ''), // CPF sem pontuação
-          password
+          password,
         }),
       });
 
+      console.log('📶 Status da resposta:', resp.status);
       const data = await resp.json();
+      console.log('📋 Corpo da resposta:', data);
 
       if (!resp.ok) {
         throw new Error(data.error || 'Falha no login');
       }
 
-      // salva token e notifica o App via contexto
+      console.log('🔐 Login bem-sucedido! Token:', data.token);
       await AsyncStorage.setItem('userToken', data.token);
       signIn(data.token);
+      // ❌ Remova este replace:
+      // navigation.replace('Home');
 
+      // Depois de signIn, isLoggedIn mudará para true no App.tsx,
+      // e o Navigator exibirá a HomeScreen por padrão.
     } catch (err: any) {
+      console.error('❌ Erro no login:', err);
       Alert.alert('Erro', err.message || 'Não foi possível conectar ao servidor');
     } finally {
       setIsLoading(false);
     }
   };
+
+
 
   return (
     <View style={styles.container}>

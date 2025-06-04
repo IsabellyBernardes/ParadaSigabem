@@ -1,4 +1,4 @@
-package com.sigabemapp
+package com.paradasigabem
 
 import android.app.Application
 import com.facebook.react.PackageList

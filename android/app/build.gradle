@@ -82,9 +82,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.sigabemapp"
+    namespace "com.paradasigabem"
     defaultConfig {
-        applicationId "com.sigabemapp"
+        applicationId "com.paradasigabem"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -93,20 +93,22 @@ android {
     signingConfigs {
         release {
             storeFile file("my-release-key.keystore")
-            storePassword "Sig@2025"
+            storePassword "sigabem2025"
             keyAlias "my-key-alias"
-            keyPassword "Sig@2025"
+            keyPassword "sigabem2025"
         }
     }
     buildTypes {
         debug {
+
+            // Continua usando a assinatura de debug (ou deixe vazio se não quiser assinatura)
             signingConfig signingConfigs.debug
-            signingConfig signingConfigs.release
         }
         release {
+            // O release continua com applicationId “limpo” (com.paradasigabem)
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
 }
