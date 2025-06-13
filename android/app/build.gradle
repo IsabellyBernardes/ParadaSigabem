@@ -93,9 +93,9 @@ android {
     signingConfigs {
         release {
             storeFile file("my-release-key.keystore")
-            storePassword "sigabem2025"
-            keyAlias "app_key_alias"
-            keyPassword "sigabem2025"
+            storePassword "sig@2025"
+            keyAlias "my-key-alias"
+            keyPassword "sig@2025"
         }
     }
     buildTypes {

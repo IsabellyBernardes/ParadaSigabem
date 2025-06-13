@@ -65,8 +65,7 @@ const LoginScreen: React.FC = () => {
       console.log('🔐 Login bem-sucedido! Token:', data.token);
       await AsyncStorage.setItem('userToken', data.token);
       signIn(data.token);
-      // ❌ Remova este replace:
-      // navigation.replace('Home');
+
 
       // Depois de signIn, isLoggedIn mudará para true no App.tsx,
       // e o Navigator exibirá a HomeScreen por padrão.

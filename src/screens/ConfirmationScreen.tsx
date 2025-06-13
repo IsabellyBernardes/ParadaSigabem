@@ -5,7 +5,7 @@ import React, {
   useEffect,
   useRef,
   useContext,
-  useCallback
+  useCallback,
 } from 'react';
 import {
   View,
@@ -99,7 +99,10 @@ const ConfirmationScreen: React.FC = () => {
       activeTripHeadsign = params.tripHeadsign;
       AsyncStorage.getItem('pendingStopAddress').then((addr) => {
         setDisplayOriginText(
-          addr || `Lat: ${activeStopLocation!.latitude.toFixed(4)}, Lon: ${activeStopLocation!.longitude.toFixed(4)}`
+          addr ||
+            `Lat: ${activeStopLocation!.latitude.toFixed(
+              4
+            )}, Lon: ${activeStopLocation!.longitude.toFixed(4)}`
         );
       });
       setDisplayLineText(`${activeTripHeadsign}`);
@@ -108,7 +111,10 @@ const ConfirmationScreen: React.FC = () => {
       activeStopLocation = params.originLocation;
       activeTripHeadsign = params.destination;
       setDisplayOriginText(
-        params.origin || `Lat: ${activeStopLocation!.latitude.toFixed(4)}, Lon: ${activeStopLocation!.longitude.toFixed(4)}`
+        params.origin ||
+          `Lat: ${activeStopLocation!.latitude.toFixed(
+            4
+          )}, Lon: ${activeStopLocation!.longitude.toFixed(4)}`
       );
       setDisplayLineText(params.destination || 'Linha não definida');
     }
@@ -130,7 +136,11 @@ const ConfirmationScreen: React.FC = () => {
     distanceMetros: number | null | undefined,
     speedMetrosPorSegundo: number | null | undefined
   ): string {
-    if (distanceMetros == null || speedMetrosPorSegundo == null || speedMetrosPorSegundo <= 0.5) {
+    if (
+      distanceMetros == null ||
+      speedMetrosPorSegundo == null ||
+      speedMetrosPorSegundo <= 0.5
+    ) {
       return 'Calculando...';
     }
     const seconds = distanceMetros / speedMetrosPorSegundo;
@@ -161,13 +171,6 @@ const ConfirmationScreen: React.FC = () => {
       }
 
       const url = `${API_URL}/api/buses/nearby?latitude=${stopLocation.latitude}&longitude=${stopLocation.longitude}&radius=2`;
-      console.log(
-        'ConfirmationScreen: Buscando ônibus em:',
-        url,
-        'para a linha:',
-        selectedTripHeadsign
-      );
-
       const response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -184,7 +187,11 @@ const ConfirmationScreen: React.FC = () => {
           return;
         }
         const errorText = await response.text();
-        console.error('Erro HTTP ao buscar ônibus:', response.status, errorText);
+        console.error(
+          'Erro HTTP ao buscar ônibus:',
+          response.status,
+          errorText
+        );
         throw new Error(`Erro HTTP: ${response.status}`);
       }
 
@@ -199,16 +206,17 @@ const ConfirmationScreen: React.FC = () => {
       if (!data.buses) {
         throw new Error('Estrutura de dados de ônibus inválida');
       }
-
-      // Filtrar somente ônibus da linha selecionada
+      
+      // ##########################################################################
+      // ## MODIFICAÇÃO AQUI: Filtro flexível para o nome da linha ##
+      // ##########################################################################
       const busesOfSelectedLine: Bus[] = data.buses.filter(
         (bus: Bus) =>
-          bus.trip_headsign === selectedTripHeadsign && typeof bus.distance === 'number'
+          bus.trip_headsign?.trim().toLowerCase() ===
+            selectedTripHeadsign?.trim().toLowerCase() &&
+          typeof bus.distance === 'number'
       );
 
-      console.log(
-        `Encontrados ${busesOfSelectedLine.length} ônibus para a linha ${selectedTripHeadsign}`
-      );
       setNearbyBuses(busesOfSelectedLine);
 
       if (webviewRef.current) {
@@ -277,8 +285,10 @@ const ConfirmationScreen: React.FC = () => {
         console.log(
           'ConfirmationScreen: Não há solicitação pendente. Polling parado.'
         );
-        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
-        if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
+        if (pollingIntervalRef.current)
+          clearInterval(pollingIntervalRef.current);
+        if (fallbackTimeoutRef.current)
+          clearTimeout(fallbackTimeoutRef.current);
         return;
       }
 
@@ -325,7 +335,10 @@ const ConfirmationScreen: React.FC = () => {
   // Função de confirmação de embarque
   const confirmEmbark = async () => {
     if (!selectedTripHeadsign) {
-      Alert.alert('Erro', 'A linha de ônibus não foi definida para confirmação.');
+      Alert.alert(
+        'Erro',
+        'A linha de ônibus não foi definida para confirmação.'
+      );
       return;
     }
 
@@ -372,14 +385,18 @@ const ConfirmationScreen: React.FC = () => {
           text: 'OK',
           onPress: () => {
             setShowConfirmModal(false);
-            if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+            if (pollingIntervalRef.current)
+              clearInterval(pollingIntervalRef.current);
             navigation.navigate('Location');
           },
         },
       ]);
     } catch (error: any) {
       console.error('Erro completo na confirmação:', error);
-      Alert.alert('Erro', error.message || 'Não foi possível confirmar o embarque');
+      Alert.alert(
+        'Erro',
+        error.message || 'Não foi possível confirmar o embarque'
+      );
     } finally {
       setConfirming(false);
     }
@@ -574,7 +591,11 @@ const ConfirmationScreen: React.FC = () => {
               Próximo ônibus da linha chega em:
             </Text>
             <Text
-              style={[styles.textValue, styles.etaText, !nearestBusInfo.bus && styles.etaTextError]}
+              style={[
+                styles.textValue,
+                styles.etaText,
+                !nearestBusInfo.bus && styles.etaTextError,
+              ]}
               accessible={false}
             >
               {nearestBusInfo.timeEstimate}
@@ -589,7 +610,10 @@ const ConfirmationScreen: React.FC = () => {
 
         {/* BOTÃO “Confirmar Embarque” */}
         <TouchableOpacity
-          style={[styles.button, (confirming || !nearestBusInfo.bus) && styles.buttonDisabled]}
+          style={[
+            styles.button,
+            (confirming || !nearestBusInfo.bus) && styles.buttonDisabled,
+          ]}
           onPress={() => setShowConfirmModal(true)}
           disabled={confirming || !nearestBusInfo.bus}
           accessible={true}
@@ -601,7 +625,9 @@ const ConfirmationScreen: React.FC = () => {
           }
           accessibilityState={{ disabled: confirming || !nearestBusInfo.bus }}
         >
-          <Text style={styles.buttonText}>Confirmar Embarque no Ônibus Acima</Text>
+          <Text style={styles.buttonText}>
+            Confirmar Embarque no Ônibus Acima
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -618,10 +644,15 @@ const ConfirmationScreen: React.FC = () => {
           <View style={styles.modalBox}>
             <Text style={styles.modalQuestion}>
               Deseja confirmar o embarque na linha {selectedTripHeadsign}?
-              {nearestBusInfo.bus && `\n(Veículo: ${nearestBusInfo.bus.bus_id})`}
+              {nearestBusInfo.bus &&
+                `\n(Veículo: ${nearestBusInfo.bus.bus_id})`}
             </Text>
             {confirming ? (
-              <ActivityIndicator size="large" color="#d50000" style={{ marginVertical: 20 }} />
+              <ActivityIndicator
+                size="large"
+                color="#d50000"
+                style={{ marginVertical: 20 }}
+              />
             ) : (
               <View style={styles.modalButtons}>
                 <TouchableOpacity
