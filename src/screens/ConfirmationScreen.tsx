@@ -275,7 +275,7 @@ const ConfirmationScreen: React.FC = () => {
         if (isMounted) {
           setTimeout(() => {
             if (isMounted) startPolling();
-          }, 1000);
+          }, 7000);
         }
         return;
       }
@@ -301,7 +301,7 @@ const ConfirmationScreen: React.FC = () => {
       if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = setInterval(() => {
         if (isMounted) fetchNearbyBuses();
-      }, 7000);
+      }, 10000);
 
       if (fallbackTimeoutRef.current) clearTimeout(fallbackTimeoutRef.current);
       fallbackTimeoutRef.current = setTimeout(() => {
